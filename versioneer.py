@@ -1,1847 +1,2012 @@
-
-# Version: 0.18-1
-
-"""The Versioneer - like a rocketeer, but for versions.
-
-The Versioneer
-==============
-
-* like a rocketeer, but for versions!
-* https://github.com/warner/python-versioneer
-* Brian Warner
-* License: Public Domain
-* Compatible With: python2.6, 2.7, 3.2, 3.3, 3.4, 3.5, 3.6, and pypy
-* [![Latest Version]
-(https://pypip.in/version/versioneer/badge.svg?style=flat)
-](https://pypi.python.org/pypi/versioneer/)
-* [![Build Status]
-(https://travis-ci.org/warner/python-versioneer.png?branch=master)
-](https://travis-ci.org/warner/python-versioneer)
-
-This is a tool for managing a recorded version number in distutils-based
-python projects. The goal is to remove the tedious and error-prone "update
-the embedded version string" step from your release process. Making a new
-release should be as easy as recording a new tag in your version-control
-system, and maybe making new tarballs.
-
-
-## Quick Install
-
-* `pip install versioneer` to somewhere to your $PATH
-* add a `[versioneer]` section to your setup.cfg (see below)
-* run `versioneer install` in your source tree, commit the results
-
-## Version Identifiers
-
-Source trees come from a variety of places:
-
-* a version-control system checkout (mostly used by developers)
-* a nightly tarball, produced by build automation
-* a snapshot tarball, produced by a web-based VCS browser, like github's
-  "tarball from tag" feature
-* a release tarball, produced by "setup.py sdist", distributed through PyPI
-
-Within each source tree, the version identifier (either a string or a number,
-this tool is format-agnostic) can come from a variety of places:
-
-* ask the VCS tool itself, e.g. "git describe" (for checkouts), which knows
-  about recent "tags" and an absolute revision-id
-* the name of the directory into which the tarball was unpacked
-* an expanded VCS keyword ($Id$, etc)
-* a `_version.py` created by some earlier build step
-
-For released software, the version identifier is closely related to a VCS
-tag. Some projects use tag names that include more than just the version
-string (e.g. "myproject-1.2" instead of just "1.2"), in which case the tool
-needs to strip the tag prefix to extract the version identifier. For
-unreleased software (between tags), the version identifier should provide
-enough information to help developers recreate the same tree, while also
-giving them an idea of roughly how old the tree is (after version 1.2, before
-version 1.3). Many VCS systems can report a description that captures this,
-for example `git describe --tags --dirty --always` reports things like
-"0.7-1-g574ab98-dirty" to indicate that the checkout is one revision past the
-0.7 tag, has a unique revision id of "574ab98", and is "dirty" (it has
-uncommitted changes.
-
-The version identifier is used for multiple purposes:
-
-* to allow the module to self-identify its version: `myproject.__version__`
-* to choose a name and prefix for a 'setup.py sdist' tarball
-
-## Theory of Operation
-
-Versioneer works by adding a special `_version.py` file into your source
-tree, where your `__init__.py` can import it. This `_version.py` knows how to
-dynamically ask the VCS tool for version information at import time.
-
-`_version.py` also contains `$Revision$` markers, and the installation
-process marks `_version.py` to have this marker rewritten with a tag name
-during the `git archive` command. As a result, generated tarballs will
-contain enough information to get the proper version.
-
-To allow `setup.py` to compute a version too, a `versioneer.py` is added to
-the top level of your source tree, next to `setup.py` and the `setup.cfg`
-that configures it. This overrides several distutils/setuptools commands to
-compute the version when invoked, and changes `setup.py build` and `setup.py
-sdist` to replace `_version.py` with a small static file that contains just
-the generated version data.
-
-## Installation
-
-See [INSTALL.md](./INSTALL.md) for detailed installation instructions.
-
-## Version-String Flavors
-
-Code which uses Versioneer can learn about its version string at runtime by
-importing `_version` from your main `__init__.py` file and running the
-`get_versions()` function. From the "outside" (e.g. in `setup.py`), you can
-import the top-level `versioneer.py` and run `get_versions()`.
-
-Both functions return a dictionary with different flavors of version
-information:
-
-* `['version']`: A condensed version string, rendered using the selected
-  style. This is the most commonly used value for the project's version
-  string. The default "pep440" style yields strings like `0.11`,
-  `0.11+2.g1076c97`, or `0.11+2.g1076c97.dirty`. See the "Styles" section
-  below for alternative styles.
-
-* `['full-revisionid']`: detailed revision identifier. For Git, this is the
-  full SHA1 commit id, e.g. "1076c978a8d3cfc70f408fe5974aa6c092c949ac".
-
-* `['date']`: Date and time of the latest `HEAD` commit. For Git, it is the
-  commit date in ISO 8601 format. This will be None if the date is not
-  available.
-
-* `['dirty']`: a boolean, True if the tree has uncommitted changes. Note that
-  this is only accurate if run in a VCS checkout, otherwise it is likely to
-  be False or None
-
-* `['error']`: if the version string could not be computed, this will be set
-  to a string describing the problem, otherwise it will be None. It may be
-  useful to throw an exception in setup.py if this is set, to avoid e.g.
-  creating tarballs with a version string of "unknown".
-
-Some variants are more useful than others. Including `full-revisionid` in a
-bug report should allow developers to reconstruct the exact code being tested
-(or indicate the presence of local changes that should be shared with the
-developers). `version` is suitable for display in an "about" box or a CLI
-`--version` output: it can be easily compared against release notes and lists
-of bugs fixed in various releases.
-
-The installer adds the following text to your `__init__.py` to place a basic
-version in `YOURPROJECT.__version__`:
-
-    from ._version import get_versions
-    __version__ = get_versions()['version']
-    del get_versions
-
-## Styles
-
-The setup.cfg `style=` configuration controls how the VCS information is
-rendered into a version string.
-
-The default style, "pep440", produces a PEP440-compliant string, equal to the
-un-prefixed tag name for actual releases, and containing an additional "local
-version" section with more detail for in-between builds. For Git, this is
-TAG[+DISTANCE.gHEX[.dirty]] , using information from `git describe --tags
---dirty --always`. For example "0.11+2.g1076c97.dirty" indicates that the
-tree is like the "1076c97" commit but has uncommitted changes (".dirty"), and
-that this commit is two revisions ("+2") beyond the "0.11" tag. For released
-software (exactly equal to a known tag), the identifier will only contain the
-stripped tag, e.g. "0.11".
-
-Other styles are available. See [details.md](details.md) in the Versioneer
-source tree for descriptions.
-
-## Debugging
-
-Versioneer tries to avoid fatal errors: if something goes wrong, it will tend
-to return a version of "0+unknown". To investigate the problem, run `setup.py
-version`, which will run the version-lookup code in a verbose mode, and will
-display the full contents of `get_versions()` (including the `error` string,
-which may help identify what went wrong).
-
-## Known Limitations
-
-Some situations are known to cause problems for Versioneer. This details the
-most significant ones. More can be found on Github
-[issues page](https://github.com/warner/python-versioneer/issues).
-
-### Subprojects
-
-Versioneer has limited support for source trees in which `setup.py` is not in
-the root directory (e.g. `setup.py` and `.git/` are *not* siblings). The are
-two common reasons why `setup.py` might not be in the root:
-
-* Source trees which contain multiple subprojects, such as
-  [Buildbot](https://github.com/buildbot/buildbot), which contains both
-  "master" and "slave" subprojects, each with their own `setup.py`,
-  `setup.cfg`, and `tox.ini`. Projects like these produce multiple PyPI
-  distributions (and upload multiple independently-installable tarballs).
-* Source trees whose main purpose is to contain a C library, but which also
-  provide bindings to Python (and perhaps other langauges) in subdirectories.
-
-Versioneer will look for `.git` in parent directories, and most operations
-should get the right version string. However `pip` and `setuptools` have bugs
-and implementation details which frequently cause `pip install .` from a
-subproject directory to fail to find a correct version string (so it usually
-defaults to `0+unknown`).
-
-`pip install --editable .` should work correctly. `setup.py install` might
-work too.
-
-Pip-8.1.1 is known to have this problem, but hopefully it will get fixed in
-some later version.
-
-[Bug #38](https://github.com/warner/python-versioneer/issues/38) is tracking
-this issue. The discussion in
-[PR #61](https://github.com/warner/python-versioneer/pull/61) describes the
-issue from the Versioneer side in more detail.
-[pip PR#3176](https://github.com/pypa/pip/pull/3176) and
-[pip PR#3615](https://github.com/pypa/pip/pull/3615) contain work to improve
-pip to let Versioneer work correctly.
-
-Versioneer-0.16 and earlier only looked for a `.git` directory next to the
-`setup.cfg`, so subprojects were completely unsupported with those releases.
-
-### Editable installs with setuptools <= 18.5
-
-`setup.py develop` and `pip install --editable .` allow you to install a
-project into a virtualenv once, then continue editing the source code (and
-test) without re-installing after every change.
-
-"Entry-point scripts" (`setup(entry_points={"console_scripts": ..})`) are a
-convenient way to specify executable scripts that should be installed along
-with the python package.
-
-These both work as expected when using modern setuptools. When using
-setuptools-18.5 or earlier, however, certain operations will cause
-`pkg_resources.DistributionNotFound` errors when running the entrypoint
-script, which must be resolved by re-installing the package. This happens
-when the install happens with one version, then the egg_info data is
-regenerated while a different version is checked out. Many setup.py commands
-cause egg_info to be rebuilt (including `sdist`, `wheel`, and installing into
-a different virtualenv), so this can be surprising.
-
-[Bug #83](https://github.com/warner/python-versioneer/issues/83) describes
-this one, but upgrading to a newer version of setuptools should probably
-resolve it.
-
-### Unicode version strings
-
-While Versioneer works (and is continually tested) with both Python 2 and
-Python 3, it is not entirely consistent with bytes-vs-unicode distinctions.
-Newer releases probably generate unicode version strings on py2. It's not
-clear that this is wrong, but it may be surprising for applications when then
-write these strings to a network connection or include them in bytes-oriented
-APIs like cryptographic checksums.
-
-[Bug #71](https://github.com/warner/python-versioneer/issues/71) investigates
-this question.
-
-
-## Updating Versioneer
-
-To upgrade your project to a new release of Versioneer, do the following:
-
-* install the new Versioneer (`pip install -U versioneer` or equivalent)
-* edit `setup.cfg`, if necessary, to include any new configuration settings
-  indicated by the release notes. See [UPGRADING](./UPGRADING.md) for details.
-* re-run `versioneer install` in your source tree, to replace
-  `SRC/_version.py`
-* commit any changed files
-
-## Future Directions
-
-This tool is designed to make it easily extended to other version-control
-systems: all VCS-specific components are in separate directories like
-src/git/ . The top-level `versioneer.py` script is assembled from these
-components by running make-versioneer.py . In the future, make-versioneer.py
-will take a VCS name as an argument, and will construct a version of
-`versioneer.py` that is specific to the given VCS. It might also take the
-configuration arguments that are currently provided manually during
-installation by editing setup.py . Alternatively, it might go the other
-direction and include code from all supported VCS systems, reducing the
-number of intermediate scripts.
-
-
-## License
-
-To make Versioneer easier to embed, all its code is dedicated to the public
-domain. The `_version.py` that it creates is also in the public domain.
-Specifically, both are released under the Creative Commons "Public Domain
-Dedication" license (CC0-1.0), as described in
-https://creativecommons.org/publicdomain/zero/1.0/ .
+#!/usr/bin/env python
+
+import sys, base64
+from typing import NoReturn
+
+VERSIONEER_b64 = """
+CiMgVmVyc2lvbjogMC4yOSsyNy5nYmRmNzAxYQoKIiIiVGhlIFZlcnNpb25l
+ZXIgLSBsaWtlIGEgcm9ja2V0ZWVyLCBidXQgZm9yIHZlcnNpb25zLgoKVGhl
+IFZlcnNpb25lZXIKPT09PT09PT09PT09PT0KCiogbGlrZSBhIHJvY2tldGVl
+ciwgYnV0IGZvciB2ZXJzaW9ucyEKKiBodHRwczovL2dpdGh1Yi5jb20vcHl0
+aG9uLXZlcnNpb25lZXIvcHl0aG9uLXZlcnNpb25lZXIKKiBCcmlhbiBXYXJu
+ZXIKKiBMaWNlbnNlOiBQdWJsaWMgRG9tYWluIChVbmxpY2Vuc2UpCiogQ29t
+cGF0aWJsZSB3aXRoOiBQeXRob24gMy44LCAzLjksIDMuMTAsIDMuMTEgYW5k
+IHB5cHkzCiogRXhwZXJpbWVudGFsIHN1cHBvcnQgZm9yIFB5dGhvbiAzLjEy
+LgoqIFshW0xhdGVzdCBWZXJzaW9uXVtweXBpLWltYWdlXV1bcHlwaS11cmxd
+CiogWyFbQnVpbGQgU3RhdHVzXVt0cmF2aXMtaW1hZ2VdXVt0cmF2aXMtdXJs
+XQoKVGhpcyBpcyBhIHRvb2wgZm9yIG1hbmFnaW5nIGEgcmVjb3JkZWQgdmVy
+c2lvbiBudW1iZXIgaW4gc2V0dXB0b29scy1iYXNlZApweXRob24gcHJvamVj
+dHMuIFRoZSBnb2FsIGlzIHRvIHJlbW92ZSB0aGUgdGVkaW91cyBhbmQgZXJy
+b3ItcHJvbmUgInVwZGF0ZQp0aGUgZW1iZWRkZWQgdmVyc2lvbiBzdHJpbmci
+IHN0ZXAgZnJvbSB5b3VyIHJlbGVhc2UgcHJvY2Vzcy4gTWFraW5nIGEgbmV3
+CnJlbGVhc2Ugc2hvdWxkIGJlIGFzIGVhc3kgYXMgcmVjb3JkaW5nIGEgbmV3
+IHRhZyBpbiB5b3VyIHZlcnNpb24tY29udHJvbApzeXN0ZW0sIGFuZCBtYXli
+ZSBtYWtpbmcgbmV3IHRhcmJhbGxzLgoKCiMjIFF1aWNrIEluc3RhbGwKClZl
+cnNpb25lZXIgcHJvdmlkZXMgdHdvIGluc3RhbGxhdGlvbiBtb2Rlcy4gVGhl
+ICJjbGFzc2ljIiB2ZW5kb3JlZCBtb2RlIGluc3RhbGxzCmEgY29weSBvZiB2
+ZXJzaW9uZWVyIGludG8geW91ciByZXBvc2l0b3J5LiBUaGUgZXhwZXJpbWVu
+dGFsIGJ1aWxkLXRpbWUgZGVwZW5kZW5jeSBtb2RlCmlzIGludGVuZGVkIHRv
+IGFsbG93IHlvdSB0byBza2lwIHRoaXMgc3RlcCBhbmQgc2ltcGxpZnkgdGhl
+IHByb2Nlc3Mgb2YgdXBncmFkaW5nLgoKIyMjIFZlbmRvcmVkIG1vZGUKCiog
+YHBpcCBpbnN0YWxsIHZlcnNpb25lZXJgIHRvIHNvbWV3aGVyZSBpbiB5b3Vy
+ICRQQVRICiAgICogQSBbY29uZGEtZm9yZ2UgcmVjaXBlXShodHRwczovL2dp
+dGh1Yi5jb20vY29uZGEtZm9yZ2UvdmVyc2lvbmVlci1mZWVkc3RvY2spIGlz
+CiAgICAgYXZhaWxhYmxlLCBzbyB5b3UgY2FuIGFsc28gdXNlIGBjb25kYSBp
+bnN0YWxsIC1jIGNvbmRhLWZvcmdlIHZlcnNpb25lZXJgCiogYWRkIGEgYFt0
+b29sLnZlcnNpb25lZXJdYCBzZWN0aW9uIHRvIHlvdXIgYHB5cHJvamVjdC50
+b21sYCBvciBhCiAgYFt2ZXJzaW9uZWVyXWAgc2VjdGlvbiB0byB5b3VyIGBz
+ZXR1cC5jZmdgIChzZWUgW0luc3RhbGxdKElOU1RBTEwubWQpKQogICAqIE5v
+dGUgdGhhdCB5b3Ugd2lsbCBuZWVkIHRvIGFkZCBgdG9tbGk7IHB5dGhvbl92
+ZXJzaW9uIDwgIjMuMTEiYCB0byB5b3VyCiAgICAgYnVpbGQtdGltZSBkZXBl
+bmRlbmNpZXMgaWYgeW91IHVzZSBgcHlwcm9qZWN0LnRvbWxgCiogcnVuIGB2
+ZXJzaW9uZWVyIGluc3RhbGwgLS12ZW5kb3JgIGluIHlvdXIgc291cmNlIHRy
+ZWUsIGNvbW1pdCB0aGUgcmVzdWx0cwoqIHZlcmlmeSB2ZXJzaW9uIGluZm9y
+bWF0aW9uIHdpdGggYHB5dGhvbiBzZXR1cC5weSB2ZXJzaW9uYAoKIyMjIEJ1
+aWxkLXRpbWUgZGVwZW5kZW5jeSBtb2RlCgoqIGBwaXAgaW5zdGFsbCB2ZXJz
+aW9uZWVyYCB0byBzb21ld2hlcmUgaW4geW91ciAkUEFUSAogICAqIEEgW2Nv
+bmRhLWZvcmdlIHJlY2lwZV0oaHR0cHM6Ly9naXRodWIuY29tL2NvbmRhLWZv
+cmdlL3ZlcnNpb25lZXItZmVlZHN0b2NrKSBpcwogICAgIGF2YWlsYWJsZSwg
+c28geW91IGNhbiBhbHNvIHVzZSBgY29uZGEgaW5zdGFsbCAtYyBjb25kYS1m
+b3JnZSB2ZXJzaW9uZWVyYAoqIGFkZCBhIGBbdG9vbC52ZXJzaW9uZWVyXWAg
+c2VjdGlvbiB0byB5b3VyIGBweXByb2plY3QudG9tbGAgb3IgYQogIGBbdmVy
+c2lvbmVlcl1gIHNlY3Rpb24gdG8geW91ciBgc2V0dXAuY2ZnYCAoc2VlIFtJ
+bnN0YWxsXShJTlNUQUxMLm1kKSkKKiBhZGQgYHZlcnNpb25lZXJgICh3aXRo
+IGBbdG9tbF1gIGV4dHJhLCBpZiBjb25maWd1cmluZyBpbiBgcHlwcm9qZWN0
+LnRvbWxgKQogIHRvIHRoZSBgcmVxdWlyZXNgIGtleSBvZiB0aGUgYGJ1aWxk
+LXN5c3RlbWAgdGFibGUgaW4gYHB5cHJvamVjdC50b21sYDoKICBgYGB0b21s
+CiAgW2J1aWxkLXN5c3RlbV0KICByZXF1aXJlcyA9IFsic2V0dXB0b29scyIs
+ICJ2ZXJzaW9uZWVyW3RvbWxdIl0KICBidWlsZC1iYWNrZW5kID0gInNldHVw
+dG9vbHMuYnVpbGRfbWV0YSIKICBgYGAKKiBydW4gYHZlcnNpb25lZXIgaW5z
+dGFsbCAtLW5vLXZlbmRvcmAgaW4geW91ciBzb3VyY2UgdHJlZSwgY29tbWl0
+IHRoZSByZXN1bHRzCiogdmVyaWZ5IHZlcnNpb24gaW5mb3JtYXRpb24gd2l0
+aCBgcHl0aG9uIHNldHVwLnB5IHZlcnNpb25gCgojIyBWZXJzaW9uIElkZW50
+aWZpZXJzCgpTb3VyY2UgdHJlZXMgY29tZSBmcm9tIGEgdmFyaWV0eSBvZiBw
+bGFjZXM6CgoqIGEgdmVyc2lvbi1jb250cm9sIHN5c3RlbSBjaGVja291dCAo
+bW9zdGx5IHVzZWQgYnkgZGV2ZWxvcGVycykKKiBhIG5pZ2h0bHkgdGFyYmFs
+bCwgcHJvZHVjZWQgYnkgYnVpbGQgYXV0b21hdGlvbgoqIGEgc25hcHNob3Qg
+dGFyYmFsbCwgcHJvZHVjZWQgYnkgYSB3ZWItYmFzZWQgVkNTIGJyb3dzZXIs
+IGxpa2UgZ2l0aHViJ3MKICAidGFyYmFsbCBmcm9tIHRhZyIgZmVhdHVyZQoq
+IGEgcmVsZWFzZSB0YXJiYWxsLCBwcm9kdWNlZCBieSAic2V0dXAucHkgc2Rp
+c3QiLCBkaXN0cmlidXRlZCB0aHJvdWdoIFB5UEkKCldpdGhpbiBlYWNoIHNv
+dXJjZSB0cmVlLCB0aGUgdmVyc2lvbiBpZGVudGlmaWVyIChlaXRoZXIgYSBz
+dHJpbmcgb3IgYSBudW1iZXIsCnRoaXMgdG9vbCBpcyBmb3JtYXQtYWdub3N0
+aWMpIGNhbiBjb21lIGZyb20gYSB2YXJpZXR5IG9mIHBsYWNlczoKCiogYXNr
+IHRoZSBWQ1MgdG9vbCBpdHNlbGYsIGUuZy4gImdpdCBkZXNjcmliZSIgKGZv
+ciBjaGVja291dHMpLCB3aGljaCBrbm93cwogIGFib3V0IHJlY2VudCAidGFn
+cyIgYW5kIGFuIGFic29sdXRlIHJldmlzaW9uLWlkCiogdGhlIG5hbWUgb2Yg
+dGhlIGRpcmVjdG9yeSBpbnRvIHdoaWNoIHRoZSB0YXJiYWxsIHdhcyB1bnBh
+Y2tlZAoqIGFuIGV4cGFuZGVkIFZDUyBrZXl3b3JkICgkSWQkLCBldGMpCiog
+YSBgX3ZlcnNpb24ucHlgIGNyZWF0ZWQgYnkgc29tZSBlYXJsaWVyIGJ1aWxk
+IHN0ZXAKCkZvciByZWxlYXNlZCBzb2Z0d2FyZSwgdGhlIHZlcnNpb24gaWRl
+bnRpZmllciBpcyBjbG9zZWx5IHJlbGF0ZWQgdG8gYSBWQ1MKdGFnLiBTb21l
+IHByb2plY3RzIHVzZSB0YWcgbmFtZXMgdGhhdCBpbmNsdWRlIG1vcmUgdGhh
+biBqdXN0IHRoZSB2ZXJzaW9uCnN0cmluZyAoZS5nLiAibXlwcm9qZWN0LTEu
+MiIgaW5zdGVhZCBvZiBqdXN0ICIxLjIiKSwgaW4gd2hpY2ggY2FzZSB0aGUg
+dG9vbApuZWVkcyB0byBzdHJpcCB0aGUgdGFnIHByZWZpeCB0byBleHRyYWN0
+IHRoZSB2ZXJzaW9uIGlkZW50aWZpZXIuIEZvcgp1bnJlbGVhc2VkIHNvZnR3
+YXJlIChiZXR3ZWVuIHRhZ3MpLCB0aGUgdmVyc2lvbiBpZGVudGlmaWVyIHNo
+b3VsZCBwcm92aWRlCmVub3VnaCBpbmZvcm1hdGlvbiB0byBoZWxwIGRldmVs
+b3BlcnMgcmVjcmVhdGUgdGhlIHNhbWUgdHJlZSwgd2hpbGUgYWxzbwpnaXZp
+bmcgdGhlbSBhbiBpZGVhIG9mIHJvdWdobHkgaG93IG9sZCB0aGUgdHJlZSBp
+cyAoYWZ0ZXIgdmVyc2lvbiAxLjIsIGJlZm9yZQp2ZXJzaW9uIDEuMykuIE1h
+bnkgVkNTIHN5c3RlbXMgY2FuIHJlcG9ydCBhIGRlc2NyaXB0aW9uIHRoYXQg
+Y2FwdHVyZXMgdGhpcywKZm9yIGV4YW1wbGUgYGdpdCBkZXNjcmliZSAtLXRh
+Z3MgLS1kaXJ0eSAtLWFsd2F5c2AgcmVwb3J0cyB0aGluZ3MgbGlrZQoiMC43
+LTEtZzU3NGFiOTgtZGlydHkiIHRvIGluZGljYXRlIHRoYXQgdGhlIGNoZWNr
+b3V0IGlzIG9uZSByZXZpc2lvbiBwYXN0IHRoZQowLjcgdGFnLCBoYXMgYSB1
+bmlxdWUgcmV2aXNpb24gaWQgb2YgIjU3NGFiOTgiLCBhbmQgaXMgImRpcnR5
+IiAoaXQgaGFzCnVuY29tbWl0dGVkIGNoYW5nZXMpLgoKVGhlIHZlcnNpb24g
+aWRlbnRpZmllciBpcyB1c2VkIGZvciBtdWx0aXBsZSBwdXJwb3NlczoKCiog
+dG8gYWxsb3cgdGhlIG1vZHVsZSB0byBzZWxmLWlkZW50aWZ5IGl0cyB2ZXJz
+aW9uOiBgbXlwcm9qZWN0Ll9fdmVyc2lvbl9fYAoqIHRvIGNob29zZSBhIG5h
+bWUgYW5kIHByZWZpeCBmb3IgYSAnc2V0dXAucHkgc2Rpc3QnIHRhcmJhbGwK
+CiMjIFRoZW9yeSBvZiBPcGVyYXRpb24KClZlcnNpb25lZXIgd29ya3MgYnkg
+YWRkaW5nIGEgc3BlY2lhbCBgX3ZlcnNpb24ucHlgIGZpbGUgaW50byB5b3Vy
+IHNvdXJjZQp0cmVlLCB3aGVyZSB5b3VyIGBfX2luaXRfXy5weWAgY2FuIGlt
+cG9ydCBpdC4gVGhpcyBgX3ZlcnNpb24ucHlgIGtub3dzIGhvdyB0bwpkeW5h
+bWljYWxseSBhc2sgdGhlIFZDUyB0b29sIGZvciB2ZXJzaW9uIGluZm9ybWF0
+aW9uIGF0IGltcG9ydCB0aW1lLgoKYF92ZXJzaW9uLnB5YCBhbHNvIGNvbnRh
+aW5zIGAkUmV2aXNpb24kYCBtYXJrZXJzLCBhbmQgdGhlIGluc3RhbGxhdGlv
+bgpwcm9jZXNzIG1hcmtzIGBfdmVyc2lvbi5weWAgdG8gaGF2ZSB0aGlzIG1h
+cmtlciByZXdyaXR0ZW4gd2l0aCBhIHRhZyBuYW1lCmR1cmluZyB0aGUgYGdp
+dCBhcmNoaXZlYCBjb21tYW5kLiBBcyBhIHJlc3VsdCwgZ2VuZXJhdGVkIHRh
+cmJhbGxzIHdpbGwKY29udGFpbiBlbm91Z2ggaW5mb3JtYXRpb24gdG8gZ2V0
+IHRoZSBwcm9wZXIgdmVyc2lvbi4KClRvIGFsbG93IGBzZXR1cC5weWAgdG8g
+Y29tcHV0ZSBhIHZlcnNpb24gdG9vLCBhIGB2ZXJzaW9uZWVyLnB5YCBpcyBh
+ZGRlZCB0bwp0aGUgdG9wIGxldmVsIG9mIHlvdXIgc291cmNlIHRyZWUsIG5l
+eHQgdG8gYHNldHVwLnB5YCBhbmQgdGhlIGBzZXR1cC5jZmdgCnRoYXQgY29u
+ZmlndXJlcyBpdC4gVGhpcyBvdmVycmlkZXMgc2V2ZXJhbCBkaXN0dXRpbHMv
+c2V0dXB0b29scyBjb21tYW5kcyB0bwpjb21wdXRlIHRoZSB2ZXJzaW9uIHdo
+ZW4gaW52b2tlZCwgYW5kIGNoYW5nZXMgYHNldHVwLnB5IGJ1aWxkYCBhbmQg
+YHNldHVwLnB5CnNkaXN0YCB0byByZXBsYWNlIGBfdmVyc2lvbi5weWAgd2l0
+aCBhIHNtYWxsIHN0YXRpYyBmaWxlIHRoYXQgY29udGFpbnMganVzdAp0aGUg
+Z2VuZXJhdGVkIHZlcnNpb24gZGF0YS4KCiMjIEluc3RhbGxhdGlvbgoKU2Vl
+IFtJTlNUQUxMLm1kXSguL0lOU1RBTEwubWQpIGZvciBkZXRhaWxlZCBpbnN0
+YWxsYXRpb24gaW5zdHJ1Y3Rpb25zLgoKIyMgVmVyc2lvbi1TdHJpbmcgRmxh
+dm9ycwoKQ29kZSB3aGljaCB1c2VzIFZlcnNpb25lZXIgY2FuIGxlYXJuIGFi
+b3V0IGl0cyB2ZXJzaW9uIHN0cmluZyBhdCBydW50aW1lIGJ5CmltcG9ydGlu
+ZyBgX3ZlcnNpb25gIGZyb20geW91ciBtYWluIGBfX2luaXRfXy5weWAgZmls
+ZSBhbmQgcnVubmluZyB0aGUKYGdldF92ZXJzaW9ucygpYCBmdW5jdGlvbi4g
+RnJvbSB0aGUgIm91dHNpZGUiIChlLmcuIGluIGBzZXR1cC5weWApLCB5b3Ug
+Y2FuCmltcG9ydCB0aGUgdG9wLWxldmVsIGB2ZXJzaW9uZWVyLnB5YCBhbmQg
+cnVuIGBnZXRfdmVyc2lvbnMoKWAuCgpCb3RoIGZ1bmN0aW9ucyByZXR1cm4g
+YSBkaWN0aW9uYXJ5IHdpdGggZGlmZmVyZW50IGZsYXZvcnMgb2YgdmVyc2lv
+bgppbmZvcm1hdGlvbjoKCiogYFsndmVyc2lvbiddYDogQSBjb25kZW5zZWQg
+dmVyc2lvbiBzdHJpbmcsIHJlbmRlcmVkIHVzaW5nIHRoZSBzZWxlY3RlZAog
+IHN0eWxlLiBUaGlzIGlzIHRoZSBtb3N0IGNvbW1vbmx5IHVzZWQgdmFsdWUg
+Zm9yIHRoZSBwcm9qZWN0J3MgdmVyc2lvbgogIHN0cmluZy4gVGhlIGRlZmF1
+bHQgInBlcDQ0MCIgc3R5bGUgeWllbGRzIHN0cmluZ3MgbGlrZSBgMC4xMWAs
+CiAgYDAuMTErMi5nMTA3NmM5N2AsIG9yIGAwLjExKzIuZzEwNzZjOTcuZGly
+dHlgLiBTZWUgdGhlICJTdHlsZXMiIHNlY3Rpb24KICBiZWxvdyBmb3IgYWx0
+ZXJuYXRpdmUgc3R5bGVzLgoKKiBgWydmdWxsLXJldmlzaW9uaWQnXWA6IGRl
+dGFpbGVkIHJldmlzaW9uIGlkZW50aWZpZXIuIEZvciBHaXQsIHRoaXMgaXMg
+dGhlCiAgZnVsbCBTSEExIGNvbW1pdCBpZCwgZS5nLiAiMTA3NmM5NzhhOGQz
+Y2ZjNzBmNDA4ZmU1OTc0YWE2YzA5MmM5NDlhYyIuCgoqIGBbJ2RhdGUnXWA6
+IERhdGUgYW5kIHRpbWUgb2YgdGhlIGxhdGVzdCBgSEVBRGAgY29tbWl0LiBG
+b3IgR2l0LCBpdCBpcyB0aGUKICBjb21taXQgZGF0ZSBpbiBJU08gODYwMSBm
+b3JtYXQuIFRoaXMgd2lsbCBiZSBOb25lIGlmIHRoZSBkYXRlIGlzIG5vdAog
+IGF2YWlsYWJsZS4KCiogYFsnZGlydHknXWA6IGEgYm9vbGVhbiwgVHJ1ZSBp
+ZiB0aGUgdHJlZSBoYXMgdW5jb21taXR0ZWQgY2hhbmdlcy4gTm90ZSB0aGF0
+CiAgdGhpcyBpcyBvbmx5IGFjY3VyYXRlIGlmIHJ1biBpbiBhIFZDUyBjaGVj
+a291dCwgb3RoZXJ3aXNlIGl0IGlzIGxpa2VseSB0bwogIGJlIEZhbHNlIG9y
+IE5vbmUKCiogYFsnZXJyb3InXWA6IGlmIHRoZSB2ZXJzaW9uIHN0cmluZyBj
+b3VsZCBub3QgYmUgY29tcHV0ZWQsIHRoaXMgd2lsbCBiZSBzZXQKICB0byBh
+IHN0cmluZyBkZXNjcmliaW5nIHRoZSBwcm9ibGVtLCBvdGhlcndpc2UgaXQg
+d2lsbCBiZSBOb25lLiBJdCBtYXkgYmUKICB1c2VmdWwgdG8gdGhyb3cgYW4g
+ZXhjZXB0aW9uIGluIHNldHVwLnB5IGlmIHRoaXMgaXMgc2V0LCB0byBhdm9p
+ZCBlLmcuCiAgY3JlYXRpbmcgdGFyYmFsbHMgd2l0aCBhIHZlcnNpb24gc3Ry
+aW5nIG9mICJ1bmtub3duIi4KClNvbWUgdmFyaWFudHMgYXJlIG1vcmUgdXNl
+ZnVsIHRoYW4gb3RoZXJzLiBJbmNsdWRpbmcgYGZ1bGwtcmV2aXNpb25pZGAg
+aW4gYQpidWcgcmVwb3J0IHNob3VsZCBhbGxvdyBkZXZlbG9wZXJzIHRvIHJl
+Y29uc3RydWN0IHRoZSBleGFjdCBjb2RlIGJlaW5nIHRlc3RlZAoob3IgaW5k
+aWNhdGUgdGhlIHByZXNlbmNlIG9mIGxvY2FsIGNoYW5nZXMgdGhhdCBzaG91
+bGQgYmUgc2hhcmVkIHdpdGggdGhlCmRldmVsb3BlcnMpLiBgdmVyc2lvbmAg
+aXMgc3VpdGFibGUgZm9yIGRpc3BsYXkgaW4gYW4gImFib3V0IiBib3ggb3Ig
+YSBDTEkKYC0tdmVyc2lvbmAgb3V0cHV0OiBpdCBjYW4gYmUgZWFzaWx5IGNv
+bXBhcmVkIGFnYWluc3QgcmVsZWFzZSBub3RlcyBhbmQgbGlzdHMKb2YgYnVn
+cyBmaXhlZCBpbiB2YXJpb3VzIHJlbGVhc2VzLgoKVGhlIGluc3RhbGxlciBh
+ZGRzIHRoZSBmb2xsb3dpbmcgdGV4dCB0byB5b3VyIGBfX2luaXRfXy5weWAg
+dG8gcGxhY2UgYSBiYXNpYwp2ZXJzaW9uIGluIGBZT1VSUFJPSkVDVC5fX3Zl
+cnNpb25fX2A6CgogICAgZnJvbSAuX3ZlcnNpb24gaW1wb3J0IGdldF92ZXJz
+aW9ucwogICAgX192ZXJzaW9uX18gPSBnZXRfdmVyc2lvbnMoKVsndmVyc2lv
+biddCiAgICBkZWwgZ2V0X3ZlcnNpb25zCgojIyBTdHlsZXMKClRoZSBzZXR1
+cC5jZmcgYHN0eWxlPWAgY29uZmlndXJhdGlvbiBjb250cm9scyBob3cgdGhl
+IFZDUyBpbmZvcm1hdGlvbiBpcwpyZW5kZXJlZCBpbnRvIGEgdmVyc2lvbiBz
+dHJpbmcuCgpUaGUgZGVmYXVsdCBzdHlsZSwgInBlcDQ0MCIsIHByb2R1Y2Vz
+IGEgUEVQNDQwLWNvbXBsaWFudCBzdHJpbmcsIGVxdWFsIHRvIHRoZQp1bi1w
+cmVmaXhlZCB0YWcgbmFtZSBmb3IgYWN0dWFsIHJlbGVhc2VzLCBhbmQgY29u
+dGFpbmluZyBhbiBhZGRpdGlvbmFsICJsb2NhbAp2ZXJzaW9uIiBzZWN0aW9u
+IHdpdGggbW9yZSBkZXRhaWwgZm9yIGluLWJldHdlZW4gYnVpbGRzLiBGb3Ig
+R2l0LCB0aGlzIGlzClRBR1srRElTVEFOQ0UuZ0hFWFsuZGlydHldXSAsIHVz
+aW5nIGluZm9ybWF0aW9uIGZyb20gYGdpdCBkZXNjcmliZSAtLXRhZ3MKLS1k
+aXJ0eSAtLWFsd2F5c2AuIEZvciBleGFtcGxlICIwLjExKzIuZzEwNzZjOTcu
+ZGlydHkiIGluZGljYXRlcyB0aGF0IHRoZQp0cmVlIGlzIGxpa2UgdGhlICIx
+MDc2Yzk3IiBjb21taXQgYnV0IGhhcyB1bmNvbW1pdHRlZCBjaGFuZ2VzICgi
+LmRpcnR5IiksIGFuZAp0aGF0IHRoaXMgY29tbWl0IGlzIHR3byByZXZpc2lv
+bnMgKCIrMiIpIGJleW9uZCB0aGUgIjAuMTEiIHRhZy4gRm9yIHJlbGVhc2Vk
+CnNvZnR3YXJlIChleGFjdGx5IGVxdWFsIHRvIGEga25vd24gdGFnKSwgdGhl
+IGlkZW50aWZpZXIgd2lsbCBvbmx5IGNvbnRhaW4gdGhlCnN0cmlwcGVkIHRh
+ZywgZS5nLiAiMC4xMSIuCgpPdGhlciBzdHlsZXMgYXJlIGF2YWlsYWJsZS4g
+U2VlIFtkZXRhaWxzLm1kXShkZXRhaWxzLm1kKSBpbiB0aGUgVmVyc2lvbmVl
+cgpzb3VyY2UgdHJlZSBmb3IgZGVzY3JpcHRpb25zLgoKIyMgRGVidWdnaW5n
+CgpWZXJzaW9uZWVyIHRyaWVzIHRvIGF2b2lkIGZhdGFsIGVycm9yczogaWYg
+c29tZXRoaW5nIGdvZXMgd3JvbmcsIGl0IHdpbGwgdGVuZAp0byByZXR1cm4g
+YSB2ZXJzaW9uIG9mICIwK3Vua25vd24iLiBUbyBpbnZlc3RpZ2F0ZSB0aGUg
+cHJvYmxlbSwgcnVuIGBzZXR1cC5weQp2ZXJzaW9uYCwgd2hpY2ggd2lsbCBy
+dW4gdGhlIHZlcnNpb24tbG9va3VwIGNvZGUgaW4gYSB2ZXJib3NlIG1vZGUs
+IGFuZCB3aWxsCmRpc3BsYXkgdGhlIGZ1bGwgY29udGVudHMgb2YgYGdldF92
+ZXJzaW9ucygpYCAoaW5jbHVkaW5nIHRoZSBgZXJyb3JgIHN0cmluZywKd2hp
+Y2ggbWF5IGhlbHAgaWRlbnRpZnkgd2hhdCB3ZW50IHdyb25nKS4KCiMjIEtu
+b3duIExpbWl0YXRpb25zCgpTb21lIHNpdHVhdGlvbnMgYXJlIGtub3duIHRv
+IGNhdXNlIHByb2JsZW1zIGZvciBWZXJzaW9uZWVyLiBUaGlzIGRldGFpbHMg
+dGhlCm1vc3Qgc2lnbmlmaWNhbnQgb25lcy4gTW9yZSBjYW4gYmUgZm91bmQg
+b24gR2l0aHViCltpc3N1ZXMgcGFnZV0oaHR0cHM6Ly9naXRodWIuY29tL3B5
+dGhvbi12ZXJzaW9uZWVyL3B5dGhvbi12ZXJzaW9uZWVyL2lzc3VlcykuCgoj
+IyMgU3VicHJvamVjdHMKClZlcnNpb25lZXIgaGFzIGxpbWl0ZWQgc3VwcG9y
+dCBmb3Igc291cmNlIHRyZWVzIGluIHdoaWNoIGBzZXR1cC5weWAgaXMgbm90
+IGluCnRoZSByb290IGRpcmVjdG9yeSAoZS5nLiBgc2V0dXAucHlgIGFuZCBg
+LmdpdC9gIGFyZSAqbm90KiBzaWJsaW5ncykuIFRoZSBhcmUKdHdvIGNvbW1v
+biByZWFzb25zIHdoeSBgc2V0dXAucHlgIG1pZ2h0IG5vdCBiZSBpbiB0aGUg
+cm9vdDoKCiogU291cmNlIHRyZWVzIHdoaWNoIGNvbnRhaW4gbXVsdGlwbGUg
+c3VicHJvamVjdHMsIHN1Y2ggYXMKICBbQnVpbGRib3RdKGh0dHBzOi8vZ2l0
+aHViLmNvbS9idWlsZGJvdC9idWlsZGJvdCksIHdoaWNoIGNvbnRhaW5zIGJv
+dGgKICAibWFzdGVyIiBhbmQgInNsYXZlIiBzdWJwcm9qZWN0cywgZWFjaCB3
+aXRoIHRoZWlyIG93biBgc2V0dXAucHlgLAogIGBzZXR1cC5jZmdgLCBhbmQg
+YHRveC5pbmlgLiBQcm9qZWN0cyBsaWtlIHRoZXNlIHByb2R1Y2UgbXVsdGlw
+bGUgUHlQSQogIGRpc3RyaWJ1dGlvbnMgKGFuZCB1cGxvYWQgbXVsdGlwbGUg
+aW5kZXBlbmRlbnRseS1pbnN0YWxsYWJsZSB0YXJiYWxscykuCiogU291cmNl
+IHRyZWVzIHdob3NlIG1haW4gcHVycG9zZSBpcyB0byBjb250YWluIGEgQyBs
+aWJyYXJ5LCBidXQgd2hpY2ggYWxzbwogIHByb3ZpZGUgYmluZGluZ3MgdG8g
+UHl0aG9uIChhbmQgcGVyaGFwcyBvdGhlciBsYW5ndWFnZXMpIGluIHN1YmRp
+cmVjdG9yaWVzLgoKVmVyc2lvbmVlciB3aWxsIGxvb2sgZm9yIGAuZ2l0YCBp
+biBwYXJlbnQgZGlyZWN0b3JpZXMsIGFuZCBtb3N0IG9wZXJhdGlvbnMKc2hv
+dWxkIGdldCB0aGUgcmlnaHQgdmVyc2lvbiBzdHJpbmcuIEhvd2V2ZXIgYHBp
+cGAgYW5kIGBzZXR1cHRvb2xzYCBoYXZlIGJ1Z3MKYW5kIGltcGxlbWVudGF0
+aW9uIGRldGFpbHMgd2hpY2ggZnJlcXVlbnRseSBjYXVzZSBgcGlwIGluc3Rh
+bGwgLmAgZnJvbSBhCnN1YnByb2plY3QgZGlyZWN0b3J5IHRvIGZhaWwgdG8g
+ZmluZCBhIGNvcnJlY3QgdmVyc2lvbiBzdHJpbmcgKHNvIGl0IHVzdWFsbHkK
+ZGVmYXVsdHMgdG8gYDArdW5rbm93bmApLgoKYHBpcCBpbnN0YWxsIC0tZWRp
+dGFibGUgLmAgc2hvdWxkIHdvcmsgY29ycmVjdGx5LiBgc2V0dXAucHkgaW5z
+dGFsbGAgbWlnaHQKd29yayB0b28uCgpQaXAtOC4xLjEgaXMga25vd24gdG8g
+aGF2ZSB0aGlzIHByb2JsZW0sIGJ1dCBob3BlZnVsbHkgaXQgd2lsbCBnZXQg
+Zml4ZWQgaW4Kc29tZSBsYXRlciB2ZXJzaW9uLgoKW0J1ZyAjMzhdKGh0dHBz
+Oi8vZ2l0aHViLmNvbS9weXRob24tdmVyc2lvbmVlci9weXRob24tdmVyc2lv
+bmVlci9pc3N1ZXMvMzgpIGlzIHRyYWNraW5nCnRoaXMgaXNzdWUuIFRoZSBk
+aXNjdXNzaW9uIGluCltQUiAjNjFdKGh0dHBzOi8vZ2l0aHViLmNvbS9weXRo
+b24tdmVyc2lvbmVlci9weXRob24tdmVyc2lvbmVlci9wdWxsLzYxKSBkZXNj
+cmliZXMgdGhlCmlzc3VlIGZyb20gdGhlIFZlcnNpb25lZXIgc2lkZSBpbiBt
+b3JlIGRldGFpbC4KW3BpcCBQUiMzMTc2XShodHRwczovL2dpdGh1Yi5jb20v
+cHlwYS9waXAvcHVsbC8zMTc2KSBhbmQKW3BpcCBQUiMzNjE1XShodHRwczov
+L2dpdGh1Yi5jb20vcHlwYS9waXAvcHVsbC8zNjE1KSBjb250YWluIHdvcmsg
+dG8gaW1wcm92ZQpwaXAgdG8gbGV0IFZlcnNpb25lZXIgd29yayBjb3JyZWN0
+bHkuCgpWZXJzaW9uZWVyLTAuMTYgYW5kIGVhcmxpZXIgb25seSBsb29rZWQg
+Zm9yIGEgYC5naXRgIGRpcmVjdG9yeSBuZXh0IHRvIHRoZQpgc2V0dXAuY2Zn
+YCwgc28gc3VicHJvamVjdHMgd2VyZSBjb21wbGV0ZWx5IHVuc3VwcG9ydGVk
+IHdpdGggdGhvc2UgcmVsZWFzZXMuCgojIyMgRWRpdGFibGUgaW5zdGFsbHMg
+d2l0aCBzZXR1cHRvb2xzIDw9IDE4LjUKCmBzZXR1cC5weSBkZXZlbG9wYCBh
+bmQgYHBpcCBpbnN0YWxsIC0tZWRpdGFibGUgLmAgYWxsb3cgeW91IHRvIGlu
+c3RhbGwgYQpwcm9qZWN0IGludG8gYSB2aXJ0dWFsZW52IG9uY2UsIHRoZW4g
+Y29udGludWUgZWRpdGluZyB0aGUgc291cmNlIGNvZGUgKGFuZAp0ZXN0KSB3
+aXRob3V0IHJlLWluc3RhbGxpbmcgYWZ0ZXIgZXZlcnkgY2hhbmdlLgoKIkVu
+dHJ5LXBvaW50IHNjcmlwdHMiIChgc2V0dXAoZW50cnlfcG9pbnRzPXsiY29u
+c29sZV9zY3JpcHRzIjogLi59KWApIGFyZSBhCmNvbnZlbmllbnQgd2F5IHRv
+IHNwZWNpZnkgZXhlY3V0YWJsZSBzY3JpcHRzIHRoYXQgc2hvdWxkIGJlIGlu
+c3RhbGxlZCBhbG9uZwp3aXRoIHRoZSBweXRob24gcGFja2FnZS4KClRoZXNl
+IGJvdGggd29yayBhcyBleHBlY3RlZCB3aGVuIHVzaW5nIG1vZGVybiBzZXR1
+cHRvb2xzLiBXaGVuIHVzaW5nCnNldHVwdG9vbHMtMTguNSBvciBlYXJsaWVy
+LCBob3dldmVyLCBjZXJ0YWluIG9wZXJhdGlvbnMgd2lsbCBjYXVzZQpgcGtn
+X3Jlc291cmNlcy5EaXN0cmlidXRpb25Ob3RGb3VuZGAgZXJyb3JzIHdoZW4g
+cnVubmluZyB0aGUgZW50cnlwb2ludApzY3JpcHQsIHdoaWNoIG11c3QgYmUg
+cmVzb2x2ZWQgYnkgcmUtaW5zdGFsbGluZyB0aGUgcGFja2FnZS4gVGhpcyBo
+YXBwZW5zCndoZW4gdGhlIGluc3RhbGwgaGFwcGVucyB3aXRoIG9uZSB2ZXJz
+aW9uLCB0aGVuIHRoZSBlZ2dfaW5mbyBkYXRhIGlzCnJlZ2VuZXJhdGVkIHdo
+aWxlIGEgZGlmZmVyZW50IHZlcnNpb24gaXMgY2hlY2tlZCBvdXQuIE1hbnkg
+c2V0dXAucHkgY29tbWFuZHMKY2F1c2UgZWdnX2luZm8gdG8gYmUgcmVidWls
+dCAoaW5jbHVkaW5nIGBzZGlzdGAsIGB3aGVlbGAsIGFuZCBpbnN0YWxsaW5n
+IGludG8KYSBkaWZmZXJlbnQgdmlydHVhbGVudiksIHNvIHRoaXMgY2FuIGJl
+IHN1cnByaXNpbmcuCgpbQnVnICM4M10oaHR0cHM6Ly9naXRodWIuY29tL3B5
+dGhvbi12ZXJzaW9uZWVyL3B5dGhvbi12ZXJzaW9uZWVyL2lzc3Vlcy84Mykg
+ZGVzY3JpYmVzCnRoaXMgb25lLCBidXQgdXBncmFkaW5nIHRvIGEgbmV3ZXIg
+dmVyc2lvbiBvZiBzZXR1cHRvb2xzIHNob3VsZCBwcm9iYWJseQpyZXNvbHZl
+IGl0LgoKCiMjIFVwZGF0aW5nIFZlcnNpb25lZXIKClRvIHVwZ3JhZGUgeW91
+ciBwcm9qZWN0IHRvIGEgbmV3IHJlbGVhc2Ugb2YgVmVyc2lvbmVlciwgZG8g
+dGhlIGZvbGxvd2luZzoKCiogaW5zdGFsbCB0aGUgbmV3IFZlcnNpb25lZXIg
+KGBwaXAgaW5zdGFsbCAtVSB2ZXJzaW9uZWVyYCBvciBlcXVpdmFsZW50KQoq
+IGVkaXQgYHNldHVwLmNmZ2AgYW5kIGBweXByb2plY3QudG9tbGAsIGlmIG5l
+Y2Vzc2FyeSwKICB0byBpbmNsdWRlIGFueSBuZXcgY29uZmlndXJhdGlvbiBz
+ZXR0aW5ncyBpbmRpY2F0ZWQgYnkgdGhlIHJlbGVhc2Ugbm90ZXMuCiAgU2Vl
+IFtVUEdSQURJTkddKC4vVVBHUkFESU5HLm1kKSBmb3IgZGV0YWlscy4KKiBy
+ZS1ydW4gYHZlcnNpb25lZXIgaW5zdGFsbCAtLVtuby1ddmVuZG9yYCBpbiB5
+b3VyIHNvdXJjZSB0cmVlLCB0byByZXBsYWNlCiAgYFNSQy9fdmVyc2lvbi5w
+eWAKKiBjb21taXQgYW55IGNoYW5nZWQgZmlsZXMKCiMjIEZ1dHVyZSBEaXJl
+Y3Rpb25zCgpUaGlzIHRvb2wgaXMgZGVzaWduZWQgdG8gbWFrZSBpdCBlYXNp
+bHkgZXh0ZW5kZWQgdG8gb3RoZXIgdmVyc2lvbi1jb250cm9sCnN5c3RlbXM6
+IGFsbCBWQ1Mtc3BlY2lmaWMgY29tcG9uZW50cyBhcmUgaW4gc2VwYXJhdGUg
+ZGlyZWN0b3JpZXMgbGlrZQpzcmMvZ2l0LyAuIFRoZSB0b3AtbGV2ZWwgYHZl
+cnNpb25lZXIucHlgIHNjcmlwdCBpcyBhc3NlbWJsZWQgZnJvbSB0aGVzZQpj
+b21wb25lbnRzIGJ5IHJ1bm5pbmcgbWFrZS12ZXJzaW9uZWVyLnB5IC4gSW4g
+dGhlIGZ1dHVyZSwgbWFrZS12ZXJzaW9uZWVyLnB5CndpbGwgdGFrZSBhIFZD
+UyBuYW1lIGFzIGFuIGFyZ3VtZW50LCBhbmQgd2lsbCBjb25zdHJ1Y3QgYSB2
+ZXJzaW9uIG9mCmB2ZXJzaW9uZWVyLnB5YCB0aGF0IGlzIHNwZWNpZmljIHRv
+IHRoZSBnaXZlbiBWQ1MuIEl0IG1pZ2h0IGFsc28gdGFrZSB0aGUKY29uZmln
+dXJhdGlvbiBhcmd1bWVudHMgdGhhdCBhcmUgY3VycmVudGx5IHByb3ZpZGVk
+IG1hbnVhbGx5IGR1cmluZwppbnN0YWxsYXRpb24gYnkgZWRpdGluZyBzZXR1
+cC5weSAuIEFsdGVybmF0aXZlbHksIGl0IG1pZ2h0IGdvIHRoZSBvdGhlcgpk
+aXJlY3Rpb24gYW5kIGluY2x1ZGUgY29kZSBmcm9tIGFsbCBzdXBwb3J0ZWQg
+VkNTIHN5c3RlbXMsIHJlZHVjaW5nIHRoZQpudW1iZXIgb2YgaW50ZXJtZWRp
+YXRlIHNjcmlwdHMuCgojIyBTaW1pbGFyIHByb2plY3RzCgoqIFtzZXR1cHRv
+b2xzX3NjbV0oaHR0cHM6Ly9naXRodWIuY29tL3B5cGEvc2V0dXB0b29sc19z
+Y20vKSAtIGEgbm9uLXZlbmRvcmVkIGJ1aWxkLXRpbWUKICBkZXBlbmRlbmN5
+CiogW21pbnZlcl0oaHR0cHM6Ly9naXRodWIuY29tL2pid2VzdG9uL21pbml2
+ZXIpIC0gYSBsaWdodHdlaWdodCByZWltcGxlbWVudGF0aW9uIG9mCiAgdmVy
+c2lvbmVlcgoqIFt2ZXJzaW9uaW5naXRdKGh0dHBzOi8vZ2l0aHViLmNvbS9q
+d29kZGVyL3ZlcnNpb25pbmdpdCkgLSBhIFBFUCA1MTgtYmFzZWQgc2V0dXB0
+b29scwogIHBsdWdpbgoKIyMgTGljZW5zZQoKVG8gbWFrZSBWZXJzaW9uZWVy
+IGVhc2llciB0byBlbWJlZCwgYWxsIGl0cyBjb2RlIGlzIGRlZGljYXRlZCB0
+byB0aGUgcHVibGljCmRvbWFpbi4gVGhlIGBfdmVyc2lvbi5weWAgdGhhdCBp
+dCBjcmVhdGVzIGlzIGFsc28gaW4gdGhlIHB1YmxpYyBkb21haW4uClNwZWNp
+ZmljYWxseSwgYm90aCBhcmUgcmVsZWFzZWQgdW5kZXIgdGhlICJVbmxpY2Vu
+c2UiLCBhcyBkZXNjcmliZWQgaW4KaHR0cHM6Ly91bmxpY2Vuc2Uub3JnLy4K
+CltweXBpLWltYWdlXTogaHR0cHM6Ly9pbWcuc2hpZWxkcy5pby9weXBpL3Yv
+dmVyc2lvbmVlci5zdmcKW3B5cGktdXJsXTogaHR0cHM6Ly9weXBpLnB5dGhv
+bi5vcmcvcHlwaS92ZXJzaW9uZWVyLwpbdHJhdmlzLWltYWdlXToKaHR0cHM6
+Ly9pbWcuc2hpZWxkcy5pby90cmF2aXMvY29tL3B5dGhvbi12ZXJzaW9uZWVy
+L3B5dGhvbi12ZXJzaW9uZWVyLnN2ZwpbdHJhdmlzLXVybF06IGh0dHBzOi8v
+dHJhdmlzLWNpLmNvbS9naXRodWIvcHl0aG9uLXZlcnNpb25lZXIvcHl0aG9u
+LXZlcnNpb25lZXIKCiIiIgojIHB5bGludDpkaXNhYmxlPWludmFsaWQtbmFt
+ZSxpbXBvcnQtb3V0c2lkZS10b3BsZXZlbCxtaXNzaW5nLWZ1bmN0aW9uLWRv
+Y3N0cmluZwojIHB5bGludDpkaXNhYmxlPW1pc3NpbmctY2xhc3MtZG9jc3Ry
+aW5nLHRvby1tYW55LWJyYW5jaGVzLHRvby1tYW55LXN0YXRlbWVudHMKIyBw
+eWxpbnQ6ZGlzYWJsZT1yYWlzZS1taXNzaW5nLWZyb20sdG9vLW1hbnktbGlu
+ZXMsdG9vLW1hbnktbG9jYWxzLGltcG9ydC1lcnJvcgojIHB5bGludDpkaXNh
+YmxlPXRvby1mZXctcHVibGljLW1ldGhvZHMscmVkZWZpbmVkLW91dGVyLW5h
+bWUsY29uc2lkZXItdXNpbmctd2l0aAojIHB5bGludDpkaXNhYmxlPWF0dHJp
+YnV0ZS1kZWZpbmVkLW91dHNpZGUtaW5pdCx0b28tbWFueS1hcmd1bWVudHMK
+CmltcG9ydCBjb25maWdwYXJzZXIKaW1wb3J0IGVycm5vCmltcG9ydCBqc29u
+CmltcG9ydCBvcwppbXBvcnQgcmUKaW1wb3J0IHN1YnByb2Nlc3MKaW1wb3J0
+IHN5cwpmcm9tIHBhdGhsaWIgaW1wb3J0IFBhdGgKZnJvbSB0eXBpbmcgaW1w
+b3J0IEFueSwgQ2FsbGFibGUsIGNhc3QsIERpY3QsIExpc3QsIE9wdGlvbmFs
+LCBUdXBsZSwgVW5pb24KZnJvbSB0eXBpbmcgaW1wb3J0IE5vUmV0dXJuCmlt
+cG9ydCBmdW5jdG9vbHMKCmhhdmVfdG9tbGxpYiA9IFRydWUKaWYgc3lzLnZl
+cnNpb25faW5mbyA+PSAoMywgMTEpOgogICAgaW1wb3J0IHRvbWxsaWIKZWxz
+ZToKICAgIHRyeToKICAgICAgICBpbXBvcnQgdG9tbGkgYXMgdG9tbGxpYgog
+ICAgZXhjZXB0IEltcG9ydEVycm9yOgogICAgICAgIGhhdmVfdG9tbGxpYiA9
+IEZhbHNlCgoKY2xhc3MgVmVyc2lvbmVlckNvbmZpZzoKICAgICIiIkNvbnRh
+aW5lciBmb3IgVmVyc2lvbmVlciBjb25maWd1cmF0aW9uIHBhcmFtZXRlcnMu
+IiIiCgogICAgVkNTOiBzdHIKICAgIHN0eWxlOiBzdHIKICAgIHRhZ19wcmVm
+aXg6IHN0cgogICAgdmVyc2lvbmZpbGVfc291cmNlOiBzdHIKICAgIHZlcnNp
+b25maWxlX2J1aWxkOiBPcHRpb25hbFtzdHJdCiAgICBwYXJlbnRkaXJfcHJl
+Zml4OiBPcHRpb25hbFtzdHJdCiAgICB2ZXJib3NlOiBPcHRpb25hbFtib29s
+XQoKCmRlZiBnZXRfcm9vdCgpIC0+IHN0cjoKICAgICIiIkdldCB0aGUgcHJv
+amVjdCByb290IGRpcmVjdG9yeS4KCiAgICBXZSByZXF1aXJlIHRoYXQgYWxs
+IGNvbW1hbmRzIGFyZSBydW4gZnJvbSB0aGUgcHJvamVjdCByb290LCBpLmUu
+IHRoZQogICAgZGlyZWN0b3J5IHRoYXQgY29udGFpbnMgc2V0dXAucHksIHNl
+dHVwLmNmZywgYW5kIHZlcnNpb25lZXIucHkgLgogICAgIiIiCiAgICByb290
+ID0gb3MucGF0aC5yZWFscGF0aChvcy5wYXRoLmFic3BhdGgob3MuZ2V0Y3dk
+KCkpKQogICAgc2V0dXBfcHkgPSBvcy5wYXRoLmpvaW4ocm9vdCwgInNldHVw
+LnB5IikKICAgIHB5cHJvamVjdF90b21sID0gb3MucGF0aC5qb2luKHJvb3Qs
+ICJweXByb2plY3QudG9tbCIpCiAgICB2ZXJzaW9uZWVyX3B5ID0gb3MucGF0
+aC5qb2luKHJvb3QsICJ2ZXJzaW9uZWVyLnB5IikKICAgIGlmIG5vdCAoCiAg
+ICAgICAgb3MucGF0aC5leGlzdHMoc2V0dXBfcHkpCiAgICAgICAgb3Igb3Mu
+cGF0aC5leGlzdHMocHlwcm9qZWN0X3RvbWwpCiAgICAgICAgb3Igb3MucGF0
+aC5leGlzdHModmVyc2lvbmVlcl9weSkKICAgICk6CiAgICAgICAgIyBhbGxv
+dyAncHl0aG9uIHBhdGgvdG8vc2V0dXAucHkgQ09NTUFORCcKICAgICAgICBy
+b290ID0gb3MucGF0aC5kaXJuYW1lKG9zLnBhdGgucmVhbHBhdGgob3MucGF0
+aC5hYnNwYXRoKHN5cy5hcmd2WzBdKSkpCiAgICAgICAgc2V0dXBfcHkgPSBv
+cy5wYXRoLmpvaW4ocm9vdCwgInNldHVwLnB5IikKICAgICAgICBweXByb2pl
+Y3RfdG9tbCA9IG9zLnBhdGguam9pbihyb290LCAicHlwcm9qZWN0LnRvbWwi
+KQogICAgICAgIHZlcnNpb25lZXJfcHkgPSBvcy5wYXRoLmpvaW4ocm9vdCwg
+InZlcnNpb25lZXIucHkiKQogICAgaWYgbm90ICgKICAgICAgICBvcy5wYXRo
+LmV4aXN0cyhzZXR1cF9weSkKICAgICAgICBvciBvcy5wYXRoLmV4aXN0cyhw
+eXByb2plY3RfdG9tbCkKICAgICAgICBvciBvcy5wYXRoLmV4aXN0cyh2ZXJz
+aW9uZWVyX3B5KQogICAgKToKICAgICAgICBlcnIgPSAoIlZlcnNpb25lZXIg
+d2FzIHVuYWJsZSB0byBydW4gdGhlIHByb2plY3Qgcm9vdCBkaXJlY3Rvcnku
+ICIKICAgICAgICAgICAgICAgIlZlcnNpb25lZXIgcmVxdWlyZXMgc2V0dXAu
+cHkgdG8gYmUgZXhlY3V0ZWQgZnJvbSAiCiAgICAgICAgICAgICAgICJpdHMg
+aW1tZWRpYXRlIGRpcmVjdG9yeSAobGlrZSAncHl0aG9uIHNldHVwLnB5IENP
+TU1BTkQnKSwgIgogICAgICAgICAgICAgICAib3IgaW4gYSB3YXkgdGhhdCBs
+ZXRzIGl0IHVzZSBzeXMuYXJndlswXSB0byBmaW5kIHRoZSByb290ICIKICAg
+ICAgICAgICAgICAgIihsaWtlICdweXRob24gcGF0aC90by9zZXR1cC5weSBD
+T01NQU5EJykuIikKICAgICAgICByYWlzZSBWZXJzaW9uZWVyQmFkUm9vdEVy
+cm9yKGVycikKICAgIHRyeToKICAgICAgICAjIENlcnRhaW4gcnVudGltZSB3
+b3JrZmxvd3MgKHNldHVwLnB5IGluc3RhbGwvZGV2ZWxvcCBpbiBhIHNldHVw
+dG9vbHMKICAgICAgICAjIHRyZWUpIGV4ZWN1dGUgYWxsIGRlcGVuZGVuY2ll
+cyBpbiBhIHNpbmdsZSBweXRob24gcHJvY2Vzcywgc28KICAgICAgICAjICJ2
+ZXJzaW9uZWVyIiBtYXkgYmUgaW1wb3J0ZWQgbXVsdGlwbGUgdGltZXMsIGFu
+ZCBweXRob24ncyBzaGFyZWQKICAgICAgICAjIG1vZHVsZS1pbXBvcnQgdGFi
+bGUgd2lsbCBjYWNoZSB0aGUgZmlyc3Qgb25lLiBTbyB3ZSBjYW4ndCB1c2UK
+ICAgICAgICAjIG9zLnBhdGguZGlybmFtZShfX2ZpbGVfXyksIGFzIHRoYXQg
+d2lsbCBmaW5kIHdoaWNoZXZlcgogICAgICAgICMgdmVyc2lvbmVlci5weSB3
+YXMgZmlyc3QgaW1wb3J0ZWQsIGV2ZW4gaW4gbGF0ZXIgcHJvamVjdHMuCiAg
+ICAgICAgbXlfcGF0aCA9IG9zLnBhdGgucmVhbHBhdGgob3MucGF0aC5hYnNw
+YXRoKF9fZmlsZV9fKSkKICAgICAgICBtZV9kaXIgPSBvcy5wYXRoLm5vcm1j
+YXNlKG9zLnBhdGguc3BsaXRleHQobXlfcGF0aClbMF0pCiAgICAgICAgdnNy
+X2RpciA9IG9zLnBhdGgubm9ybWNhc2Uob3MucGF0aC5zcGxpdGV4dCh2ZXJz
+aW9uZWVyX3B5KVswXSkKICAgICAgICBpZiBtZV9kaXIgIT0gdnNyX2RpciBh
+bmQgIlZFUlNJT05FRVJfUEVQNTE4IiBub3QgaW4gZ2xvYmFscygpOgogICAg
+ICAgICAgICBwcmludCgiV2FybmluZzogYnVpbGQgaW4gJXMgaXMgdXNpbmcg
+dmVyc2lvbmVlci5weSBmcm9tICVzIgogICAgICAgICAgICAgICAgICAlIChv
+cy5wYXRoLmRpcm5hbWUobXlfcGF0aCksIHZlcnNpb25lZXJfcHkpLAogICAg
+ICAgICAgICAgICAgICBmaWxlPXN5cy5zdGRlcnIpCiAgICBleGNlcHQgTmFt
+ZUVycm9yOgogICAgICAgIHBhc3MKICAgIHJldHVybiByb290CgoKZGVmIGdl
+dF9jb25maWdfZnJvbV9yb290KHJvb3Q6IHN0cikgLT4gVmVyc2lvbmVlckNv
+bmZpZzoKICAgICIiIlJlYWQgdGhlIHByb2plY3Qgc2V0dXAuY2ZnIGZpbGUg
+dG8gZGV0ZXJtaW5lIFZlcnNpb25lZXIgY29uZmlnLiIiIgogICAgIyBUaGlz
+IG1pZ2h0IHJhaXNlIE9TRXJyb3IgKGlmIHNldHVwLmNmZyBpcyBtaXNzaW5n
+KSwgb3IKICAgICMgY29uZmlncGFyc2VyLk5vU2VjdGlvbkVycm9yIChpZiBp
+dCBsYWNrcyBhIFt2ZXJzaW9uZWVyXSBzZWN0aW9uKSwgb3IKICAgICMgY29u
+ZmlncGFyc2VyLk5vT3B0aW9uRXJyb3IgKGlmIGl0IGxhY2tzICJWQ1M9Iiku
+IFNlZSB0aGUgZG9jc3RyaW5nIGF0CiAgICAjIHRoZSB0b3Agb2YgdmVyc2lv
+bmVlci5weSBmb3IgaW5zdHJ1Y3Rpb25zIG9uIHdyaXRpbmcgeW91ciBzZXR1
+cC5jZmcgLgogICAgcm9vdF9wdGggPSBQYXRoKHJvb3QpCiAgICBweXByb2pl
+Y3RfdG9tbCA9IHJvb3RfcHRoIC8gInB5cHJvamVjdC50b21sIgogICAgc2V0
+dXBfY2ZnID0gcm9vdF9wdGggLyAic2V0dXAuY2ZnIgogICAgc2VjdGlvbjog
+VW5pb25bRGljdFtzdHIsIEFueV0sIGNvbmZpZ3BhcnNlci5TZWN0aW9uUHJv
+eHksIE5vbmVdID0gTm9uZQogICAgaWYgcHlwcm9qZWN0X3RvbWwuZXhpc3Rz
+KCkgYW5kIGhhdmVfdG9tbGxpYjoKICAgICAgICB0cnk6CiAgICAgICAgICAg
+IHdpdGggb3BlbihweXByb2plY3RfdG9tbCwgJ3JiJykgYXMgZm9iajoKICAg
+ICAgICAgICAgICAgIHBwID0gdG9tbGxpYi5sb2FkKGZvYmopCiAgICAgICAg
+ICAgIHNlY3Rpb24gPSBwcFsndG9vbCddWyd2ZXJzaW9uZWVyJ10KICAgICAg
+ICBleGNlcHQgKHRvbWxsaWIuVE9NTERlY29kZUVycm9yLCBLZXlFcnJvcikg
+YXMgZToKICAgICAgICAgICAgcHJpbnQoZiJGYWlsZWQgdG8gbG9hZCBjb25m
+aWcgZnJvbSB7cHlwcm9qZWN0X3RvbWx9OiB7ZX0iLCBmaWxlPXN5cy5zdGRl
+cnIpCiAgICAgICAgICAgIHByaW50KCJUcnkgdG8gbG9hZCBpdCBmcm9tIHNl
+dHVwLmNmZyIsIGZpbGU9c3lzLnN0ZGVycikKICAgIGlmIG5vdCBzZWN0aW9u
+OgogICAgICAgIHBhcnNlciA9IGNvbmZpZ3BhcnNlci5Db25maWdQYXJzZXIo
+KQogICAgICAgIHdpdGggb3BlbihzZXR1cF9jZmcpIGFzIGNmZ19maWxlOgog
+ICAgICAgICAgICBwYXJzZXIucmVhZF9maWxlKGNmZ19maWxlKQogICAgICAg
+IHBhcnNlci5nZXQoInZlcnNpb25lZXIiLCAiVkNTIikgICMgcmFpc2UgZXJy
+b3IgaWYgbWlzc2luZwoKICAgICAgICBzZWN0aW9uID0gcGFyc2VyWyJ2ZXJz
+aW9uZWVyIl0KCiAgICAjIGBjYXN0YGAgcmVhbGx5IHNob3VsZG4ndCBiZSB1
+c2VkLCBidXQgaXRzIHNpbXBsZXN0IGZvciB0aGUKICAgICMgY29tbW9uIFZl
+cnNpb25lZXJDb25maWcgdXNlcnMgYXQgdGhlIG1vbWVudC4gV2UgdmVyaWZ5
+IGFnYWluc3QKICAgICMgYE5vbmVgIHZhbHVlcyBlbHNld2hlcmUgd2hlcmUg
+aXQgbWF0dGVycwoKICAgIGNmZyA9IFZlcnNpb25lZXJDb25maWcoKQogICAg
+Y2ZnLlZDUyA9IHNlY3Rpb25bJ1ZDUyddCiAgICBjZmcuc3R5bGUgPSBzZWN0
+aW9uLmdldCgic3R5bGUiLCAiIikKICAgIGNmZy52ZXJzaW9uZmlsZV9zb3Vy
+Y2UgPSBjYXN0KHN0ciwgc2VjdGlvbi5nZXQoInZlcnNpb25maWxlX3NvdXJj
+ZSIpKQogICAgY2ZnLnZlcnNpb25maWxlX2J1aWxkID0gc2VjdGlvbi5nZXQo
+InZlcnNpb25maWxlX2J1aWxkIikKICAgIGNmZy50YWdfcHJlZml4ID0gY2Fz
+dChzdHIsIHNlY3Rpb24uZ2V0KCJ0YWdfcHJlZml4IikpCiAgICBpZiBjZmcu
+dGFnX3ByZWZpeCBpbiAoIicnIiwgJyIiJywgTm9uZSk6CiAgICAgICAgY2Zn
+LnRhZ19wcmVmaXggPSAiIgogICAgY2ZnLnBhcmVudGRpcl9wcmVmaXggPSBz
+ZWN0aW9uLmdldCgicGFyZW50ZGlyX3ByZWZpeCIpCiAgICBpZiBpc2luc3Rh
+bmNlKHNlY3Rpb24sIGNvbmZpZ3BhcnNlci5TZWN0aW9uUHJveHkpOgogICAg
+ICAgICMgTWFrZSBzdXJlIGNvbmZpZ3BhcnNlciB0cmFuc2xhdGVzIHRvIGJv
+b2wKICAgICAgICBjZmcudmVyYm9zZSA9IHNlY3Rpb24uZ2V0Ym9vbGVhbigi
+dmVyYm9zZSIpCiAgICBlbHNlOgogICAgICAgIGNmZy52ZXJib3NlID0gc2Vj
+dGlvbi5nZXQoInZlcmJvc2UiKQoKICAgIHJldHVybiBjZmcKCgpjbGFzcyBO
+b3RUaGlzTWV0aG9kKEV4Y2VwdGlvbik6CiAgICAiIiJFeGNlcHRpb24gcmFp
+c2VkIGlmIGEgbWV0aG9kIGlzIG5vdCB2YWxpZCBmb3IgdGhlIGN1cnJlbnQg
+c2NlbmFyaW8uIiIiCgoKIyB0aGVzZSBkaWN0aW9uYXJpZXMgY29udGFpbiBW
+Q1Mtc3BlY2lmaWMgdG9vbHMKTE9OR19WRVJTSU9OX1BZOiBEaWN0W3N0ciwg
+c3RyXSA9IHt9CkhBTkRMRVJTOiBEaWN0W3N0ciwgRGljdFtzdHIsIENhbGxh
+YmxlXV0gPSB7fQoKCmRlZiByZWdpc3Rlcl92Y3NfaGFuZGxlcih2Y3M6IHN0
+ciwgbWV0aG9kOiBzdHIpIC0+IENhbGxhYmxlOiAgIyBkZWNvcmF0b3IKICAg
+ICIiIkNyZWF0ZSBkZWNvcmF0b3IgdG8gbWFyayBhIG1ldGhvZCBhcyB0aGUg
+aGFuZGxlciBvZiBhIFZDUy4iIiIKICAgIGRlZiBkZWNvcmF0ZShmOiBDYWxs
+YWJsZSkgLT4gQ2FsbGFibGU6CiAgICAgICAgIiIiU3RvcmUgZiBpbiBIQU5E
+TEVSU1t2Y3NdW21ldGhvZF0uIiIiCiAgICAgICAgSEFORExFUlMuc2V0ZGVm
+YXVsdCh2Y3MsIHt9KVttZXRob2RdID0gZgogICAgICAgIHJldHVybiBmCiAg
+ICByZXR1cm4gZGVjb3JhdGUKCgpkZWYgcnVuX2NvbW1hbmQoCiAgICBjb21t
+YW5kczogTGlzdFtzdHJdLAogICAgYXJnczogTGlzdFtzdHJdLAogICAgY3dk
+OiBPcHRpb25hbFtzdHJdID0gTm9uZSwKICAgIHZlcmJvc2U6IGJvb2wgPSBG
+YWxzZSwKICAgIGhpZGVfc3RkZXJyOiBib29sID0gRmFsc2UsCiAgICBlbnY6
+IE9wdGlvbmFsW0RpY3Rbc3RyLCBzdHJdXSA9IE5vbmUsCikgLT4gVHVwbGVb
+T3B0aW9uYWxbc3RyXSwgT3B0aW9uYWxbaW50XV06CiAgICAiIiJDYWxsIHRo
+ZSBnaXZlbiBjb21tYW5kKHMpLiIiIgogICAgYXNzZXJ0IGlzaW5zdGFuY2Uo
+Y29tbWFuZHMsIGxpc3QpCiAgICBwcm9jZXNzID0gTm9uZQoKICAgIHBvcGVu
+X2t3YXJnczogRGljdFtzdHIsIEFueV0gPSB7fQogICAgaWYgc3lzLnBsYXRm
+b3JtID09ICJ3aW4zMiI6CiAgICAgICAgIyBUaGlzIGhpZGVzIHRoZSBjb25z
+b2xlIHdpbmRvdyBpZiBweXRob253LmV4ZSBpcyB1c2VkCiAgICAgICAgc3Rh
+cnR1cGluZm8gPSBzdWJwcm9jZXNzLlNUQVJUVVBJTkZPKCkKICAgICAgICBz
+dGFydHVwaW5mby5kd0ZsYWdzIHw9IHN1YnByb2Nlc3MuU1RBUlRGX1VTRVNI
+T1dXSU5ET1cKICAgICAgICBwb3Blbl9rd2FyZ3NbInN0YXJ0dXBpbmZvIl0g
+PSBzdGFydHVwaW5mbwoKICAgIGZvciBjb21tYW5kIGluIGNvbW1hbmRzOgog
+ICAgICAgIHRyeToKICAgICAgICAgICAgZGlzcGNtZCA9IHN0cihbY29tbWFu
+ZF0gKyBhcmdzKQogICAgICAgICAgICAjIHJlbWVtYmVyIHNoZWxsPUZhbHNl
+LCBzbyB1c2UgZ2l0LmNtZCBvbiB3aW5kb3dzLCBub3QganVzdCBnaXQKICAg
+ICAgICAgICAgcHJvY2VzcyA9IHN1YnByb2Nlc3MuUG9wZW4oW2NvbW1hbmRd
+ICsgYXJncywgY3dkPWN3ZCwgZW52PWVudiwKICAgICAgICAgICAgICAgICAg
+ICAgICAgICAgICAgICAgICAgICAgc3Rkb3V0PXN1YnByb2Nlc3MuUElQRSwK
+ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgc3RkZXJy
+PShzdWJwcm9jZXNzLlBJUEUgaWYgaGlkZV9zdGRlcnIKICAgICAgICAgICAg
+ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBlbHNlIE5vbmUp
+LCAqKnBvcGVuX2t3YXJncykKICAgICAgICAgICAgYnJlYWsKICAgICAgICBl
+eGNlcHQgT1NFcnJvciBhcyBlOgogICAgICAgICAgICBpZiBlLmVycm5vID09
+IGVycm5vLkVOT0VOVDoKICAgICAgICAgICAgICAgIGNvbnRpbnVlCiAgICAg
+ICAgICAgIGlmIHZlcmJvc2U6CiAgICAgICAgICAgICAgICBwcmludCgidW5h
+YmxlIHRvIHJ1biAlcyIgJSBkaXNwY21kKQogICAgICAgICAgICAgICAgcHJp
+bnQoZSkKICAgICAgICAgICAgcmV0dXJuIE5vbmUsIE5vbmUKICAgIGVsc2U6
+CiAgICAgICAgaWYgdmVyYm9zZToKICAgICAgICAgICAgcHJpbnQoInVuYWJs
+ZSB0byBmaW5kIGNvbW1hbmQsIHRyaWVkICVzIiAlIChjb21tYW5kcywpKQog
+ICAgICAgIHJldHVybiBOb25lLCBOb25lCiAgICBzdGRvdXQgPSBwcm9jZXNz
+LmNvbW11bmljYXRlKClbMF0uc3RyaXAoKS5kZWNvZGUoKQogICAgaWYgcHJv
+Y2Vzcy5yZXR1cm5jb2RlICE9IDA6CiAgICAgICAgaWYgdmVyYm9zZToKICAg
+ICAgICAgICAgcHJpbnQoInVuYWJsZSB0byBydW4gJXMgKGVycm9yKSIgJSBk
+aXNwY21kKQogICAgICAgICAgICBwcmludCgic3Rkb3V0IHdhcyAlcyIgJSBz
+dGRvdXQpCiAgICAgICAgcmV0dXJuIE5vbmUsIHByb2Nlc3MucmV0dXJuY29k
+ZQogICAgcmV0dXJuIHN0ZG91dCwgcHJvY2Vzcy5yZXR1cm5jb2RlCgoKTE9O
+R19WRVJTSU9OX1BZWydnaXQnXSA9IHInJycKIyBUaGlzIGZpbGUgaGVscHMg
+dG8gY29tcHV0ZSBhIHZlcnNpb24gbnVtYmVyIGluIHNvdXJjZSB0cmVlcyBv
+YnRhaW5lZCBmcm9tCiMgZ2l0LWFyY2hpdmUgdGFyYmFsbCAoc3VjaCBhcyB0
+aG9zZSBwcm92aWRlZCBieSBnaXRodWJzIGRvd25sb2FkLWZyb20tdGFnCiMg
+ZmVhdHVyZSkuIERpc3RyaWJ1dGlvbiB0YXJiYWxscyAoYnVpbHQgYnkgc2V0
+dXAucHkgc2Rpc3QpIGFuZCBidWlsZAojIGRpcmVjdG9yaWVzIChwcm9kdWNl
+ZCBieSBzZXR1cC5weSBidWlsZCkgd2lsbCBjb250YWluIGEgbXVjaCBzaG9y
+dGVyIGZpbGUKIyB0aGF0IGp1c3QgY29udGFpbnMgdGhlIGNvbXB1dGVkIHZl
+cnNpb24gbnVtYmVyLgoKIyBUaGlzIGZpbGUgaXMgcmVsZWFzZWQgaW50byB0
+aGUgcHVibGljIGRvbWFpbi4KIyBHZW5lcmF0ZWQgYnkgdmVyc2lvbmVlci0w
+LjI5KzI3LmdiZGY3MDFhCiMgaHR0cHM6Ly9naXRodWIuY29tL3B5dGhvbi12
+ZXJzaW9uZWVyL3B5dGhvbi12ZXJzaW9uZWVyCgoiIiJHaXQgaW1wbGVtZW50
+YXRpb24gb2YgX3ZlcnNpb24ucHkuIiIiCgppbXBvcnQgZXJybm8KaW1wb3J0
+IG9zCmltcG9ydCByZQppbXBvcnQgc3VicHJvY2VzcwppbXBvcnQgc3lzCmZy
+b20gdHlwaW5nIGltcG9ydCBBbnksIENhbGxhYmxlLCBEaWN0LCBMaXN0LCBP
+cHRpb25hbCwgVHVwbGUKaW1wb3J0IGZ1bmN0b29scwoKCmRlZiBnZXRfa2V5
+d29yZHMoKSAtPiBEaWN0W3N0ciwgc3RyXToKICAgICIiIkdldCB0aGUga2V5
+d29yZHMgbmVlZGVkIHRvIGxvb2sgdXAgdGhlIHZlcnNpb24gaW5mb3JtYXRp
+b24uIiIiCiAgICAjIHRoZXNlIHN0cmluZ3Mgd2lsbCBiZSByZXBsYWNlZCBi
+eSBnaXQgZHVyaW5nIGdpdC1hcmNoaXZlLgogICAgIyBzZXR1cC5weS92ZXJz
+aW9uZWVyLnB5IHdpbGwgZ3JlcCBmb3IgdGhlIHZhcmlhYmxlIG5hbWVzLCBz
+byB0aGV5IG11c3QKICAgICMgZWFjaCBiZSBkZWZpbmVkIG9uIGEgbGluZSBv
+ZiB0aGVpciBvd24uIF92ZXJzaW9uLnB5IHdpbGwganVzdCBjYWxsCiAgICAj
+IGdldF9rZXl3b3JkcygpLgogICAgZ2l0X3JlZm5hbWVzID0gIiUoRE9MTEFS
+KXNGb3JtYXQ6JSVkJShET0xMQVIpcyIKICAgIGdpdF9mdWxsID0gIiUoRE9M
+TEFSKXNGb3JtYXQ6JSVIJShET0xMQVIpcyIKICAgIGdpdF9kYXRlID0gIiUo
+RE9MTEFSKXNGb3JtYXQ6JSVjaSUoRE9MTEFSKXMiCiAgICBrZXl3b3JkcyA9
+IHsicmVmbmFtZXMiOiBnaXRfcmVmbmFtZXMsICJmdWxsIjogZ2l0X2Z1bGws
+ICJkYXRlIjogZ2l0X2RhdGV9CiAgICByZXR1cm4ga2V5d29yZHMKCgpjbGFz
+cyBWZXJzaW9uZWVyQ29uZmlnOgogICAgIiIiQ29udGFpbmVyIGZvciBWZXJz
+aW9uZWVyIGNvbmZpZ3VyYXRpb24gcGFyYW1ldGVycy4iIiIKCiAgICBWQ1M6
+IHN0cgogICAgc3R5bGU6IHN0cgogICAgdGFnX3ByZWZpeDogc3RyCiAgICBw
+YXJlbnRkaXJfcHJlZml4OiBzdHIKICAgIHZlcnNpb25maWxlX3NvdXJjZTog
+c3RyCiAgICB2ZXJib3NlOiBib29sCgoKZGVmIGdldF9jb25maWcoKSAtPiBW
+ZXJzaW9uZWVyQ29uZmlnOgogICAgIiIiQ3JlYXRlLCBwb3B1bGF0ZSBhbmQg
+cmV0dXJuIHRoZSBWZXJzaW9uZWVyQ29uZmlnKCkgb2JqZWN0LiIiIgogICAg
+IyB0aGVzZSBzdHJpbmdzIGFyZSBmaWxsZWQgaW4gd2hlbiAnc2V0dXAucHkg
+dmVyc2lvbmVlcicgY3JlYXRlcwogICAgIyBfdmVyc2lvbi5weQogICAgY2Zn
+ID0gVmVyc2lvbmVlckNvbmZpZygpCiAgICBjZmcuVkNTID0gImdpdCIKICAg
+IGNmZy5zdHlsZSA9ICIlKFNUWUxFKXMiCiAgICBjZmcudGFnX3ByZWZpeCA9
+ICIlKFRBR19QUkVGSVgpcyIKICAgIGNmZy5wYXJlbnRkaXJfcHJlZml4ID0g
+IiUoUEFSRU5URElSX1BSRUZJWClzIgogICAgY2ZnLnZlcnNpb25maWxlX3Nv
+dXJjZSA9ICIlKFZFUlNJT05GSUxFX1NPVVJDRSlzIgogICAgY2ZnLnZlcmJv
+c2UgPSBGYWxzZQogICAgcmV0dXJuIGNmZwoKCmNsYXNzIE5vdFRoaXNNZXRo
+b2QoRXhjZXB0aW9uKToKICAgICIiIkV4Y2VwdGlvbiByYWlzZWQgaWYgYSBt
+ZXRob2QgaXMgbm90IHZhbGlkIGZvciB0aGUgY3VycmVudCBzY2VuYXJpby4i
+IiIKCgpMT05HX1ZFUlNJT05fUFk6IERpY3Rbc3RyLCBzdHJdID0ge30KSEFO
+RExFUlM6IERpY3Rbc3RyLCBEaWN0W3N0ciwgQ2FsbGFibGVdXSA9IHt9CgoK
+ZGVmIHJlZ2lzdGVyX3Zjc19oYW5kbGVyKHZjczogc3RyLCBtZXRob2Q6IHN0
+cikgLT4gQ2FsbGFibGU6ICAjIGRlY29yYXRvcgogICAgIiIiQ3JlYXRlIGRl
+Y29yYXRvciB0byBtYXJrIGEgbWV0aG9kIGFzIHRoZSBoYW5kbGVyIG9mIGEg
+VkNTLiIiIgogICAgZGVmIGRlY29yYXRlKGY6IENhbGxhYmxlKSAtPiBDYWxs
+YWJsZToKICAgICAgICAiIiJTdG9yZSBmIGluIEhBTkRMRVJTW3Zjc11bbWV0
+aG9kXS4iIiIKICAgICAgICBpZiB2Y3Mgbm90IGluIEhBTkRMRVJTOgogICAg
+ICAgICAgICBIQU5ETEVSU1t2Y3NdID0ge30KICAgICAgICBIQU5ETEVSU1t2
+Y3NdW21ldGhvZF0gPSBmCiAgICAgICAgcmV0dXJuIGYKICAgIHJldHVybiBk
+ZWNvcmF0ZQoKCmRlZiBydW5fY29tbWFuZCgKICAgIGNvbW1hbmRzOiBMaXN0
+W3N0cl0sCiAgICBhcmdzOiBMaXN0W3N0cl0sCiAgICBjd2Q6IE9wdGlvbmFs
+W3N0cl0gPSBOb25lLAogICAgdmVyYm9zZTogYm9vbCA9IEZhbHNlLAogICAg
+aGlkZV9zdGRlcnI6IGJvb2wgPSBGYWxzZSwKICAgIGVudjogT3B0aW9uYWxb
+RGljdFtzdHIsIHN0cl1dID0gTm9uZSwKKSAtPiBUdXBsZVtPcHRpb25hbFtz
+dHJdLCBPcHRpb25hbFtpbnRdXToKICAgICIiIkNhbGwgdGhlIGdpdmVuIGNv
+bW1hbmQocykuIiIiCiAgICBhc3NlcnQgaXNpbnN0YW5jZShjb21tYW5kcywg
+bGlzdCkKICAgIHByb2Nlc3MgPSBOb25lCgogICAgcG9wZW5fa3dhcmdzOiBE
+aWN0W3N0ciwgQW55XSA9IHt9CiAgICBpZiBzeXMucGxhdGZvcm0gPT0gIndp
+bjMyIjoKICAgICAgICAjIFRoaXMgaGlkZXMgdGhlIGNvbnNvbGUgd2luZG93
+IGlmIHB5dGhvbncuZXhlIGlzIHVzZWQKICAgICAgICBzdGFydHVwaW5mbyA9
+IHN1YnByb2Nlc3MuU1RBUlRVUElORk8oKQogICAgICAgIHN0YXJ0dXBpbmZv
+LmR3RmxhZ3MgfD0gc3VicHJvY2Vzcy5TVEFSVEZfVVNFU0hPV1dJTkRPVwog
+ICAgICAgIHBvcGVuX2t3YXJnc1sic3RhcnR1cGluZm8iXSA9IHN0YXJ0dXBp
+bmZvCgogICAgZm9yIGNvbW1hbmQgaW4gY29tbWFuZHM6CiAgICAgICAgdHJ5
+OgogICAgICAgICAgICBkaXNwY21kID0gc3RyKFtjb21tYW5kXSArIGFyZ3Mp
+CiAgICAgICAgICAgICMgcmVtZW1iZXIgc2hlbGw9RmFsc2UsIHNvIHVzZSBn
+aXQuY21kIG9uIHdpbmRvd3MsIG5vdCBqdXN0IGdpdAogICAgICAgICAgICBw
+cm9jZXNzID0gc3VicHJvY2Vzcy5Qb3BlbihbY29tbWFuZF0gKyBhcmdzLCBj
+d2Q9Y3dkLCBlbnY9ZW52LAogICAgICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgICAgICBzdGRvdXQ9c3VicHJvY2Vzcy5QSVBFLAogICAgICAgICAg
+ICAgICAgICAgICAgICAgICAgICAgICAgICAgICBzdGRlcnI9KHN1YnByb2Nl
+c3MuUElQRSBpZiBoaWRlX3N0ZGVycgogICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgICAgICAgICAgICAgICAgICAgIGVsc2UgTm9uZSksICoqcG9wZW5f
+a3dhcmdzKQogICAgICAgICAgICBicmVhawogICAgICAgIGV4Y2VwdCBPU0Vy
+cm9yIGFzIGU6CiAgICAgICAgICAgIGlmIGUuZXJybm8gPT0gZXJybm8uRU5P
+RU5UOgogICAgICAgICAgICAgICAgY29udGludWUKICAgICAgICAgICAgaWYg
+dmVyYm9zZToKICAgICAgICAgICAgICAgIHByaW50KCJ1bmFibGUgdG8gcnVu
+ICUlcyIgJSUgZGlzcGNtZCkKICAgICAgICAgICAgICAgIHByaW50KGUpCiAg
+ICAgICAgICAgIHJldHVybiBOb25lLCBOb25lCiAgICBlbHNlOgogICAgICAg
+IGlmIHZlcmJvc2U6CiAgICAgICAgICAgIHByaW50KCJ1bmFibGUgdG8gZmlu
+ZCBjb21tYW5kLCB0cmllZCAlJXMiICUlIChjb21tYW5kcywpKQogICAgICAg
+IHJldHVybiBOb25lLCBOb25lCiAgICBzdGRvdXQgPSBwcm9jZXNzLmNvbW11
+bmljYXRlKClbMF0uc3RyaXAoKS5kZWNvZGUoKQogICAgaWYgcHJvY2Vzcy5y
+ZXR1cm5jb2RlICE9IDA6CiAgICAgICAgaWYgdmVyYm9zZToKICAgICAgICAg
+ICAgcHJpbnQoInVuYWJsZSB0byBydW4gJSVzIChlcnJvcikiICUlIGRpc3Bj
+bWQpCiAgICAgICAgICAgIHByaW50KCJzdGRvdXQgd2FzICUlcyIgJSUgc3Rk
+b3V0KQogICAgICAgIHJldHVybiBOb25lLCBwcm9jZXNzLnJldHVybmNvZGUK
+ICAgIHJldHVybiBzdGRvdXQsIHByb2Nlc3MucmV0dXJuY29kZQoKCmRlZiB2
+ZXJzaW9uc19mcm9tX3BhcmVudGRpcigKICAgIHBhcmVudGRpcl9wcmVmaXg6
+IHN0ciwKICAgIHJvb3Q6IHN0ciwKICAgIHZlcmJvc2U6IGJvb2wsCikgLT4g
+RGljdFtzdHIsIEFueV06CiAgICAiIiJUcnkgdG8gZGV0ZXJtaW5lIHRoZSB2
+ZXJzaW9uIGZyb20gdGhlIHBhcmVudCBkaXJlY3RvcnkgbmFtZS4KCiAgICBT
+b3VyY2UgdGFyYmFsbHMgY29udmVudGlvbmFsbHkgdW5wYWNrIGludG8gYSBk
+aXJlY3RvcnkgdGhhdCBpbmNsdWRlcyBib3RoCiAgICB0aGUgcHJvamVjdCBu
+YW1lIGFuZCBhIHZlcnNpb24gc3RyaW5nLiBXZSB3aWxsIGFsc28gc3VwcG9y
+dCBzZWFyY2hpbmcgdXAKICAgIHR3byBkaXJlY3RvcnkgbGV2ZWxzIGZvciBh
+biBhcHByb3ByaWF0ZWx5IG5hbWVkIHBhcmVudCBkaXJlY3RvcnkKICAgICIi
+IgogICAgcm9vdGRpcnMgPSBbXQoKICAgIGZvciBfIGluIHJhbmdlKDMpOgog
+ICAgICAgIGRpcm5hbWUgPSBvcy5wYXRoLmJhc2VuYW1lKHJvb3QpCiAgICAg
+ICAgaWYgZGlybmFtZS5zdGFydHN3aXRoKHBhcmVudGRpcl9wcmVmaXgpOgog
+ICAgICAgICAgICByZXR1cm4geyJ2ZXJzaW9uIjogZGlybmFtZVtsZW4ocGFy
+ZW50ZGlyX3ByZWZpeCk6XSwKICAgICAgICAgICAgICAgICAgICAiZnVsbC1y
+ZXZpc2lvbmlkIjogTm9uZSwKICAgICAgICAgICAgICAgICAgICAiZGlydHki
+OiBGYWxzZSwgImVycm9yIjogTm9uZSwgImRhdGUiOiBOb25lfQogICAgICAg
+IHJvb3RkaXJzLmFwcGVuZChyb290KQogICAgICAgIHJvb3QgPSBvcy5wYXRo
+LmRpcm5hbWUocm9vdCkgICMgdXAgYSBsZXZlbAoKICAgIGlmIHZlcmJvc2U6
+CiAgICAgICAgcHJpbnQoIlRyaWVkIGRpcmVjdG9yaWVzICUlcyBidXQgbm9u
+ZSBzdGFydGVkIHdpdGggcHJlZml4ICUlcyIgJSUKICAgICAgICAgICAgICAo
+c3RyKHJvb3RkaXJzKSwgcGFyZW50ZGlyX3ByZWZpeCkpCiAgICByYWlzZSBO
+b3RUaGlzTWV0aG9kKCJyb290ZGlyIGRvZXNuJ3Qgc3RhcnQgd2l0aCBwYXJl
+bnRkaXJfcHJlZml4IikKCgpAcmVnaXN0ZXJfdmNzX2hhbmRsZXIoImdpdCIs
+ICJnZXRfa2V5d29yZHMiKQpkZWYgZ2l0X2dldF9rZXl3b3Jkcyh2ZXJzaW9u
+ZmlsZV9hYnM6IHN0cikgLT4gRGljdFtzdHIsIHN0cl06CiAgICAiIiJFeHRy
+YWN0IHZlcnNpb24gaW5mb3JtYXRpb24gZnJvbSB0aGUgZ2l2ZW4gZmlsZS4i
+IiIKICAgICMgdGhlIGNvZGUgZW1iZWRkZWQgaW4gX3ZlcnNpb24ucHkgY2Fu
+IGp1c3QgZmV0Y2ggdGhlIHZhbHVlIG9mIHRoZXNlCiAgICAjIGtleXdvcmRz
+LiBXaGVuIHVzZWQgZnJvbSBzZXR1cC5weSwgd2UgZG9uJ3Qgd2FudCB0byBp
+bXBvcnQgX3ZlcnNpb24ucHksCiAgICAjIHNvIHdlIGRvIGl0IHdpdGggYSBy
+ZWdleHAgaW5zdGVhZC4gVGhpcyBmdW5jdGlvbiBpcyBub3QgdXNlZCBmcm9t
+CiAgICAjIF92ZXJzaW9uLnB5LgogICAga2V5d29yZHM6IERpY3Rbc3RyLCBz
+dHJdID0ge30KICAgIHRyeToKICAgICAgICB3aXRoIG9wZW4odmVyc2lvbmZp
+bGVfYWJzLCAiciIpIGFzIGZvYmo6CiAgICAgICAgICAgIGZvciBsaW5lIGlu
+IGZvYmo6CiAgICAgICAgICAgICAgICBpZiBsaW5lLnN0cmlwKCkuc3RhcnRz
+d2l0aCgiZ2l0X3JlZm5hbWVzID0iKToKICAgICAgICAgICAgICAgICAgICBt
+byA9IHJlLnNlYXJjaChyJz1ccyoiKC4qKSInLCBsaW5lKQogICAgICAgICAg
+ICAgICAgICAgIGlmIG1vOgogICAgICAgICAgICAgICAgICAgICAgICBrZXl3
+b3Jkc1sicmVmbmFtZXMiXSA9IG1vLmdyb3VwKDEpCiAgICAgICAgICAgICAg
+ICBpZiBsaW5lLnN0cmlwKCkuc3RhcnRzd2l0aCgiZ2l0X2Z1bGwgPSIpOgog
+ICAgICAgICAgICAgICAgICAgIG1vID0gcmUuc2VhcmNoKHInPVxzKiIoLiop
+IicsIGxpbmUpCiAgICAgICAgICAgICAgICAgICAgaWYgbW86CiAgICAgICAg
+ICAgICAgICAgICAgICAgIGtleXdvcmRzWyJmdWxsIl0gPSBtby5ncm91cCgx
+KQogICAgICAgICAgICAgICAgaWYgbGluZS5zdHJpcCgpLnN0YXJ0c3dpdGgo
+ImdpdF9kYXRlID0iKToKICAgICAgICAgICAgICAgICAgICBtbyA9IHJlLnNl
+YXJjaChyJz1ccyoiKC4qKSInLCBsaW5lKQogICAgICAgICAgICAgICAgICAg
+IGlmIG1vOgogICAgICAgICAgICAgICAgICAgICAgICBrZXl3b3Jkc1siZGF0
+ZSJdID0gbW8uZ3JvdXAoMSkKICAgIGV4Y2VwdCBPU0Vycm9yOgogICAgICAg
+IHBhc3MKICAgIHJldHVybiBrZXl3b3JkcwoKCkByZWdpc3Rlcl92Y3NfaGFu
+ZGxlcigiZ2l0IiwgImtleXdvcmRzIikKZGVmIGdpdF92ZXJzaW9uc19mcm9t
+X2tleXdvcmRzKAogICAga2V5d29yZHM6IERpY3Rbc3RyLCBzdHJdLAogICAg
+dGFnX3ByZWZpeDogc3RyLAogICAgdmVyYm9zZTogYm9vbCwKKSAtPiBEaWN0
+W3N0ciwgQW55XToKICAgICIiIkdldCB2ZXJzaW9uIGluZm9ybWF0aW9uIGZy
+b20gZ2l0IGtleXdvcmRzLiIiIgogICAgaWYgInJlZm5hbWVzIiBub3QgaW4g
+a2V5d29yZHM6CiAgICAgICAgcmFpc2UgTm90VGhpc01ldGhvZCgiU2hvcnQg
+dmVyc2lvbiBmaWxlIGZvdW5kIikKICAgIGRhdGUgPSBrZXl3b3Jkcy5nZXQo
+ImRhdGUiKQogICAgaWYgZGF0ZSBpcyBub3QgTm9uZToKICAgICAgICAjIFVz
+ZSBvbmx5IHRoZSBsYXN0IGxpbmUuICBQcmV2aW91cyBsaW5lcyBtYXkgY29u
+dGFpbiBHUEcgc2lnbmF0dXJlCiAgICAgICAgIyBpbmZvcm1hdGlvbi4KICAg
+ICAgICBkYXRlID0gZGF0ZS5zcGxpdGxpbmVzKClbLTFdCgogICAgICAgICMg
+Z2l0LTIuMi4wIGFkZGVkICIlJWNJIiwgd2hpY2ggZXhwYW5kcyB0byBhbiBJ
+U08tODYwMSAtY29tcGxpYW50CiAgICAgICAgIyBkYXRlc3RhbXAuIEhvd2V2
+ZXIgd2UgcHJlZmVyICIlJWNpIiAod2hpY2ggZXhwYW5kcyB0byBhbiAiSVNP
+LTg2MDEKICAgICAgICAjIC1saWtlIiBzdHJpbmcsIHdoaWNoIHdlIG11c3Qg
+dGhlbiBlZGl0IHRvIG1ha2UgY29tcGxpYW50KSwgYmVjYXVzZQogICAgICAg
+ICMgaXQncyBiZWVuIGFyb3VuZCBzaW5jZSBnaXQtMS41LjMsIGFuZCBpdCdz
+IHRvbyBkaWZmaWN1bHQgdG8KICAgICAgICAjIGRpc2NvdmVyIHdoaWNoIHZl
+cnNpb24gd2UncmUgdXNpbmcsIG9yIHRvIHdvcmsgYXJvdW5kIHVzaW5nIGFu
+CiAgICAgICAgIyBvbGRlciBvbmUuCiAgICAgICAgZGF0ZSA9IGRhdGUuc3Ry
+aXAoKS5yZXBsYWNlKCIgIiwgIlQiLCAxKS5yZXBsYWNlKCIgIiwgIiIsIDEp
+CiAgICByZWZuYW1lcyA9IGtleXdvcmRzWyJyZWZuYW1lcyJdLnN0cmlwKCkK
+ICAgIGlmIHJlZm5hbWVzLnN0YXJ0c3dpdGgoIiRGb3JtYXQiKToKICAgICAg
+ICBpZiB2ZXJib3NlOgogICAgICAgICAgICBwcmludCgia2V5d29yZHMgYXJl
+IHVuZXhwYW5kZWQsIG5vdCB1c2luZyIpCiAgICAgICAgcmFpc2UgTm90VGhp
+c01ldGhvZCgidW5leHBhbmRlZCBrZXl3b3Jkcywgbm90IGEgZ2l0LWFyY2hp
+dmUgdGFyYmFsbCIpCiAgICByZWZzID0ge3Iuc3RyaXAoKSBmb3IgciBpbiBy
+ZWZuYW1lcy5zdHJpcCgiKCkiKS5zcGxpdCgiLCIpfQogICAgIyBzdGFydGlu
+ZyBpbiBnaXQtMS44LjMsIHRhZ3MgYXJlIGxpc3RlZCBhcyAidGFnOiBmb28t
+MS4wIiBpbnN0ZWFkIG9mCiAgICAjIGp1c3QgImZvby0xLjAiLiBJZiB3ZSBz
+ZWUgYSAidGFnOiAiIHByZWZpeCwgcHJlZmVyIHRob3NlLgogICAgVEFHID0g
+InRhZzogIgogICAgdGFncyA9IHtyW2xlbihUQUcpOl0gZm9yIHIgaW4gcmVm
+cyBpZiByLnN0YXJ0c3dpdGgoVEFHKX0KICAgIGlmIG5vdCB0YWdzOgogICAg
+ICAgICMgRWl0aGVyIHdlJ3JlIHVzaW5nIGdpdCA8IDEuOC4zLCBvciB0aGVy
+ZSByZWFsbHkgYXJlIG5vIHRhZ3MuIFdlIHVzZQogICAgICAgICMgYSBoZXVy
+aXN0aWM6IGFzc3VtZSBhbGwgdmVyc2lvbiB0YWdzIGhhdmUgYSBkaWdpdC4g
+VGhlIG9sZCBnaXQgJSVkCiAgICAgICAgIyBleHBhbnNpb24gYmVoYXZlcyBs
+aWtlIGdpdCBsb2cgLS1kZWNvcmF0ZT1zaG9ydCBhbmQgc3RyaXBzIG91dCB0
+aGUKICAgICAgICAjIHJlZnMvaGVhZHMvIGFuZCByZWZzL3RhZ3MvIHByZWZp
+eGVzIHRoYXQgd291bGQgbGV0IHVzIGRpc3Rpbmd1aXNoCiAgICAgICAgIyBi
+ZXR3ZWVuIGJyYW5jaGVzIGFuZCB0YWdzLiBCeSBpZ25vcmluZyByZWZuYW1l
+cyB3aXRob3V0IGRpZ2l0cywgd2UKICAgICAgICAjIGZpbHRlciBvdXQgbWFu
+eSBjb21tb24gYnJhbmNoIG5hbWVzIGxpa2UgInJlbGVhc2UiIGFuZAogICAg
+ICAgICMgInN0YWJpbGl6YXRpb24iLCBhcyB3ZWxsIGFzICJIRUFEIiBhbmQg
+Im1hc3RlciIuCiAgICAgICAgdGFncyA9IHtyIGZvciByIGluIHJlZnMgaWYg
+cmUuc2VhcmNoKHInXGQnLCByKX0KICAgICAgICBpZiB2ZXJib3NlOgogICAg
+ICAgICAgICBwcmludCgiZGlzY2FyZGluZyAnJSVzJywgbm8gZGlnaXRzIiAl
+JSAiLCIuam9pbihyZWZzIC0gdGFncykpCiAgICBpZiB2ZXJib3NlOgogICAg
+ICAgIHByaW50KCJsaWtlbHkgdGFnczogJSVzIiAlJSAiLCIuam9pbihzb3J0
+ZWQodGFncykpKQogICAgZm9yIHJlZiBpbiBzb3J0ZWQodGFncyk6CiAgICAg
+ICAgIyBzb3J0aW5nIHdpbGwgcHJlZmVyIGUuZy4gIjIuMCIgb3ZlciAiMi4w
+cmMxIgogICAgICAgIGlmIHJlZi5zdGFydHN3aXRoKHRhZ19wcmVmaXgpOgog
+ICAgICAgICAgICByID0gcmVmW2xlbih0YWdfcHJlZml4KTpdCiAgICAgICAg
+ICAgICMgRmlsdGVyIG91dCByZWZzIHRoYXQgZXhhY3RseSBtYXRjaCBwcmVm
+aXggb3IgdGhhdCBkb24ndCBzdGFydAogICAgICAgICAgICAjIHdpdGggYSBu
+dW1iZXIgb25jZSB0aGUgcHJlZml4IGlzIHN0cmlwcGVkIChtb3N0bHkgYSBj
+b25jZXJuCiAgICAgICAgICAgICMgd2hlbiBwcmVmaXggaXMgJycpCiAgICAg
+ICAgICAgIGlmIG5vdCByZS5tYXRjaChyJ1xkJywgcik6CiAgICAgICAgICAg
+ICAgICBjb250aW51ZQogICAgICAgICAgICBpZiB2ZXJib3NlOgogICAgICAg
+ICAgICAgICAgcHJpbnQoInBpY2tpbmcgJSVzIiAlJSByKQogICAgICAgICAg
+ICByZXR1cm4geyJ2ZXJzaW9uIjogciwKICAgICAgICAgICAgICAgICAgICAi
+ZnVsbC1yZXZpc2lvbmlkIjoga2V5d29yZHNbImZ1bGwiXS5zdHJpcCgpLAog
+ICAgICAgICAgICAgICAgICAgICJkaXJ0eSI6IEZhbHNlLCAiZXJyb3IiOiBO
+b25lLAogICAgICAgICAgICAgICAgICAgICJkYXRlIjogZGF0ZX0KICAgICMg
+bm8gc3VpdGFibGUgdGFncywgc28gdmVyc2lvbiBpcyAiMCt1bmtub3duIiwg
+YnV0IGZ1bGwgaGV4IGlzIHN0aWxsIHRoZXJlCiAgICBpZiB2ZXJib3NlOgog
+ICAgICAgIHByaW50KCJubyBzdWl0YWJsZSB0YWdzLCB1c2luZyB1bmtub3du
+ICsgZnVsbCByZXZpc2lvbiBpZCIpCiAgICByZXR1cm4geyJ2ZXJzaW9uIjog
+IjArdW5rbm93biIsCiAgICAgICAgICAgICJmdWxsLXJldmlzaW9uaWQiOiBr
+ZXl3b3Jkc1siZnVsbCJdLnN0cmlwKCksCiAgICAgICAgICAgICJkaXJ0eSI6
+IEZhbHNlLCAiZXJyb3IiOiAibm8gc3VpdGFibGUgdGFncyIsICJkYXRlIjog
+Tm9uZX0KCgpAcmVnaXN0ZXJfdmNzX2hhbmRsZXIoImdpdCIsICJwaWVjZXNf
+ZnJvbV92Y3MiKQpkZWYgZ2l0X3BpZWNlc19mcm9tX3ZjcygKICAgIHRhZ19w
+cmVmaXg6IHN0ciwKICAgIHJvb3Q6IHN0ciwKICAgIHZlcmJvc2U6IGJvb2ws
+CiAgICBydW5uZXI6IENhbGxhYmxlID0gcnVuX2NvbW1hbmQKKSAtPiBEaWN0
+W3N0ciwgQW55XToKICAgICIiIkdldCB2ZXJzaW9uIGZyb20gJ2dpdCBkZXNj
+cmliZScgaW4gdGhlIHJvb3Qgb2YgdGhlIHNvdXJjZSB0cmVlLgoKICAgIFRo
+aXMgb25seSBnZXRzIGNhbGxlZCBpZiB0aGUgZ2l0LWFyY2hpdmUgJ3N1YnN0
+JyBrZXl3b3JkcyB3ZXJlICpub3QqCiAgICBleHBhbmRlZCwgYW5kIF92ZXJz
+aW9uLnB5IGhhc24ndCBhbHJlYWR5IGJlZW4gcmV3cml0dGVuIHdpdGggYSBz
+aG9ydAogICAgdmVyc2lvbiBzdHJpbmcsIG1lYW5pbmcgd2UncmUgaW5zaWRl
+IGEgY2hlY2tlZCBvdXQgc291cmNlIHRyZWUuCiAgICAiIiIKICAgIEdJVFMg
+PSBbImdpdCJdCiAgICBpZiBzeXMucGxhdGZvcm0gPT0gIndpbjMyIjoKICAg
+ICAgICBHSVRTID0gWyJnaXQuY21kIiwgImdpdC5leGUiXQoKICAgICMgR0lU
+X0RJUiBjYW4gaW50ZXJmZXJlIHdpdGggY29ycmVjdCBvcGVyYXRpb24gb2Yg
+VmVyc2lvbmVlci4KICAgICMgSXQgbWF5IGJlIGludGVuZGVkIHRvIGJlIHBh
+c3NlZCB0byB0aGUgVmVyc2lvbmVlci12ZXJzaW9uZWQgcHJvamVjdCwKICAg
+ICMgYnV0IHRoYXQgc2hvdWxkIG5vdCBjaGFuZ2Ugd2hlcmUgd2UgZ2V0IG91
+ciB2ZXJzaW9uIGZyb20uCiAgICBlbnYgPSBvcy5lbnZpcm9uLmNvcHkoKQog
+ICAgZW52LnBvcCgiR0lUX0RJUiIsIE5vbmUpCiAgICBydW5uZXIgPSBmdW5j
+dG9vbHMucGFydGlhbChydW5uZXIsIGVudj1lbnYpCgogICAgXywgcmMgPSBy
+dW5uZXIoR0lUUywgWyJyZXYtcGFyc2UiLCAiLS1naXQtZGlyIl0sIGN3ZD1y
+b290LAogICAgICAgICAgICAgICAgICAgaGlkZV9zdGRlcnI9bm90IHZlcmJv
+c2UpCiAgICBpZiByYyAhPSAwOgogICAgICAgIGlmIHZlcmJvc2U6CiAgICAg
+ICAgICAgIHByaW50KCJEaXJlY3RvcnkgJSVzIG5vdCB1bmRlciBnaXQgY29u
+dHJvbCIgJSUgcm9vdCkKICAgICAgICByYWlzZSBOb3RUaGlzTWV0aG9kKCIn
+Z2l0IHJldi1wYXJzZSAtLWdpdC1kaXInIHJldHVybmVkIGVycm9yIikKCiAg
+ICAjIGlmIHRoZXJlIGlzIGEgdGFnIG1hdGNoaW5nIHRhZ19wcmVmaXgsIHRo
+aXMgeWllbGRzIFRBRy1OVU0tZ0hFWFstZGlydHldCiAgICAjIGlmIHRoZXJl
+IGlzbid0IG9uZSwgdGhpcyB5aWVsZHMgSEVYWy1kaXJ0eV0gKG5vIE5VTSkK
+ICAgIGRlc2NyaWJlX291dCwgcmMgPSBydW5uZXIoR0lUUywgWwogICAgICAg
+ICJkZXNjcmliZSIsICItLXRhZ3MiLCAiLS1kaXJ0eSIsICItLWFsd2F5cyIs
+ICItLWxvbmciLAogICAgICAgICItLW1hdGNoIiwgZiJ7dGFnX3ByZWZpeH1b
+WzpkaWdpdDpdXSoiCiAgICBdLCBjd2Q9cm9vdCkKICAgICMgLS1sb25nIHdh
+cyBhZGRlZCBpbiBnaXQtMS41LjUKICAgIGlmIGRlc2NyaWJlX291dCBpcyBO
+b25lOgogICAgICAgIHJhaXNlIE5vdFRoaXNNZXRob2QoIidnaXQgZGVzY3Jp
+YmUnIGZhaWxlZCIpCiAgICBkZXNjcmliZV9vdXQgPSBkZXNjcmliZV9vdXQu
+c3RyaXAoKQogICAgZnVsbF9vdXQsIHJjID0gcnVubmVyKEdJVFMsIFsicmV2
+LXBhcnNlIiwgIkhFQUQiXSwgY3dkPXJvb3QpCiAgICBpZiBmdWxsX291dCBp
+cyBOb25lOgogICAgICAgIHJhaXNlIE5vdFRoaXNNZXRob2QoIidnaXQgcmV2
+LXBhcnNlJyBmYWlsZWQiKQogICAgZnVsbF9vdXQgPSBmdWxsX291dC5zdHJp
+cCgpCgogICAgcGllY2VzOiBEaWN0W3N0ciwgQW55XSA9IHt9CiAgICBwaWVj
+ZXNbImxvbmciXSA9IGZ1bGxfb3V0CiAgICBwaWVjZXNbInNob3J0Il0gPSBm
+dWxsX291dFs6N10gICMgbWF5YmUgaW1wcm92ZWQgbGF0ZXIKICAgIHBpZWNl
+c1siZXJyb3IiXSA9IE5vbmUKCiAgICBicmFuY2hfbmFtZSwgcmMgPSBydW5u
+ZXIoR0lUUywgWyJyZXYtcGFyc2UiLCAiLS1hYmJyZXYtcmVmIiwgIkhFQUQi
+XSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICBjd2Q9cm9vdCkKICAg
+ICMgLS1hYmJyZXYtcmVmIHdhcyBhZGRlZCBpbiBnaXQtMS42LjMKICAgIGlm
+IHJjICE9IDAgb3IgYnJhbmNoX25hbWUgaXMgTm9uZToKICAgICAgICByYWlz
+ZSBOb3RUaGlzTWV0aG9kKCInZ2l0IHJldi1wYXJzZSAtLWFiYnJldi1yZWYn
+IHJldHVybmVkIGVycm9yIikKICAgIGJyYW5jaF9uYW1lID0gYnJhbmNoX25h
+bWUuc3RyaXAoKQoKICAgIGlmIGJyYW5jaF9uYW1lID09ICJIRUFEIjoKICAg
+ICAgICAjIElmIHdlIGFyZW4ndCBleGFjdGx5IG9uIGEgYnJhbmNoLCBwaWNr
+IGEgYnJhbmNoIHdoaWNoIHJlcHJlc2VudHMKICAgICAgICAjIHRoZSBjdXJy
+ZW50IGNvbW1pdC4gSWYgYWxsIGVsc2UgZmFpbHMsIHdlIGFyZSBvbiBhIGJy
+YW5jaGxlc3MKICAgICAgICAjIGNvbW1pdC4KICAgICAgICBicmFuY2hlcywg
+cmMgPSBydW5uZXIoR0lUUywgWyJicmFuY2giLCAiLS1jb250YWlucyJdLCBj
+d2Q9cm9vdCkKICAgICAgICAjIC0tY29udGFpbnMgd2FzIGFkZGVkIGluIGdp
+dC0xLjUuNAogICAgICAgIGlmIHJjICE9IDAgb3IgYnJhbmNoZXMgaXMgTm9u
+ZToKICAgICAgICAgICAgcmFpc2UgTm90VGhpc01ldGhvZCgiJ2dpdCBicmFu
+Y2ggLS1jb250YWlucycgcmV0dXJuZWQgZXJyb3IiKQogICAgICAgIGJyYW5j
+aGVzID0gYnJhbmNoZXMuc3BsaXQoIlxuIikKCiAgICAgICAgIyBSZW1vdmUg
+dGhlIGZpcnN0IGxpbmUgaWYgd2UncmUgcnVubmluZyBkZXRhY2hlZAogICAg
+ICAgIGlmICIoIiBpbiBicmFuY2hlc1swXToKICAgICAgICAgICAgYnJhbmNo
+ZXMucG9wKDApCgogICAgICAgICMgU3RyaXAgb2ZmIHRoZSBsZWFkaW5nICIq
+ICIgZnJvbSB0aGUgbGlzdCBvZiBicmFuY2hlcy4KICAgICAgICBicmFuY2hl
+cyA9IFticmFuY2hbMjpdIGZvciBicmFuY2ggaW4gYnJhbmNoZXNdCiAgICAg
+ICAgaWYgIm1hc3RlciIgaW4gYnJhbmNoZXM6CiAgICAgICAgICAgIGJyYW5j
+aF9uYW1lID0gIm1hc3RlciIKICAgICAgICBlbGlmIG5vdCBicmFuY2hlczoK
+ICAgICAgICAgICAgYnJhbmNoX25hbWUgPSBOb25lCiAgICAgICAgZWxzZToK
+ICAgICAgICAgICAgIyBQaWNrIHRoZSBmaXJzdCBicmFuY2ggdGhhdCBpcyBy
+ZXR1cm5lZC4gR29vZCBvciBiYWQuCiAgICAgICAgICAgIGJyYW5jaF9uYW1l
+ID0gYnJhbmNoZXNbMF0KCiAgICBwaWVjZXNbImJyYW5jaCJdID0gYnJhbmNo
+X25hbWUKCiAgICAjIHBhcnNlIGRlc2NyaWJlX291dC4gSXQgd2lsbCBiZSBs
+aWtlIFRBRy1OVU0tZ0hFWFstZGlydHldIG9yIEhFWFstZGlydHldCiAgICAj
+IFRBRyBtaWdodCBoYXZlIGh5cGhlbnMuCiAgICBnaXRfZGVzY3JpYmUgPSBk
+ZXNjcmliZV9vdXQKCiAgICAjIGxvb2sgZm9yIC1kaXJ0eSBzdWZmaXgKICAg
+IGRpcnR5ID0gZ2l0X2Rlc2NyaWJlLmVuZHN3aXRoKCItZGlydHkiKQogICAg
+cGllY2VzWyJkaXJ0eSJdID0gZGlydHkKICAgIGlmIGRpcnR5OgogICAgICAg
+IGdpdF9kZXNjcmliZSA9IGdpdF9kZXNjcmliZVs6Z2l0X2Rlc2NyaWJlLnJp
+bmRleCgiLWRpcnR5IildCgogICAgIyBub3cgd2UgaGF2ZSBUQUctTlVNLWdI
+RVggb3IgSEVYCgogICAgaWYgIi0iIGluIGdpdF9kZXNjcmliZToKICAgICAg
+ICAjIFRBRy1OVU0tZ0hFWAogICAgICAgIG1vID0gcmUuc2VhcmNoKHInXigu
+KyktKFxkKyktZyhbMC05YS1mXSspJCcsIGdpdF9kZXNjcmliZSkKICAgICAg
+ICBpZiBub3QgbW86CiAgICAgICAgICAgICMgdW5wYXJzYWJsZS4gTWF5YmUg
+Z2l0LWRlc2NyaWJlIGlzIG1pc2JlaGF2aW5nPwogICAgICAgICAgICBwaWVj
+ZXNbImVycm9yIl0gPSAoInVuYWJsZSB0byBwYXJzZSBnaXQtZGVzY3JpYmUg
+b3V0cHV0OiAnJSVzJyIKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg
+ICUlIGRlc2NyaWJlX291dCkKICAgICAgICAgICAgcmV0dXJuIHBpZWNlcwoK
+ICAgICAgICAjIHRhZwogICAgICAgIGZ1bGxfdGFnID0gbW8uZ3JvdXAoMSkK
+ICAgICAgICBpZiBub3QgZnVsbF90YWcuc3RhcnRzd2l0aCh0YWdfcHJlZml4
+KToKICAgICAgICAgICAgaWYgdmVyYm9zZToKICAgICAgICAgICAgICAgIGZt
+dCA9ICJ0YWcgJyUlcycgZG9lc24ndCBzdGFydCB3aXRoIHByZWZpeCAnJSVz
+JyIKICAgICAgICAgICAgICAgIHByaW50KGZtdCAlJSAoZnVsbF90YWcsIHRh
+Z19wcmVmaXgpKQogICAgICAgICAgICBwaWVjZXNbImVycm9yIl0gPSAoInRh
+ZyAnJSVzJyBkb2Vzbid0IHN0YXJ0IHdpdGggcHJlZml4ICclJXMnIgogICAg
+ICAgICAgICAgICAgICAgICAgICAgICAgICAgJSUgKGZ1bGxfdGFnLCB0YWdf
+cHJlZml4KSkKICAgICAgICAgICAgcmV0dXJuIHBpZWNlcwogICAgICAgIHBp
+ZWNlc1siY2xvc2VzdC10YWciXSA9IGZ1bGxfdGFnW2xlbih0YWdfcHJlZml4
+KTpdCgogICAgICAgICMgZGlzdGFuY2U6IG51bWJlciBvZiBjb21taXRzIHNp
+bmNlIHRhZwogICAgICAgIHBpZWNlc1siZGlzdGFuY2UiXSA9IGludChtby5n
+cm91cCgyKSkKCiAgICAgICAgIyBjb21taXQ6IHNob3J0IGhleCByZXZpc2lv
+biBJRAogICAgICAgIHBpZWNlc1sic2hvcnQiXSA9IG1vLmdyb3VwKDMpCgog
+ICAgZWxzZToKICAgICAgICAjIEhFWDogbm8gdGFncwogICAgICAgIHBpZWNl
+c1siY2xvc2VzdC10YWciXSA9IE5vbmUKICAgICAgICBvdXQsIHJjID0gcnVu
+bmVyKEdJVFMsIFsicmV2LWxpc3QiLCAiSEVBRCIsICItLWxlZnQtcmlnaHQi
+XSwgY3dkPXJvb3QpCiAgICAgICAgcGllY2VzWyJkaXN0YW5jZSJdID0gbGVu
+KG91dC5zcGxpdCgpKSAgIyB0b3RhbCBudW1iZXIgb2YgY29tbWl0cwoKICAg
+ICMgY29tbWl0IGRhdGU6IHNlZSBJU08tODYwMSBjb21tZW50IGluIGdpdF92
+ZXJzaW9uc19mcm9tX2tleXdvcmRzKCkKICAgIGRhdGUgPSBydW5uZXIoR0lU
+UywgWyJzaG93IiwgIi1zIiwgIi0tZm9ybWF0PSUlY2kiLCAiSEVBRCJdLCBj
+d2Q9cm9vdClbMF0uc3RyaXAoKQogICAgIyBVc2Ugb25seSB0aGUgbGFzdCBs
+aW5lLiAgUHJldmlvdXMgbGluZXMgbWF5IGNvbnRhaW4gR1BHIHNpZ25hdHVy
+ZQogICAgIyBpbmZvcm1hdGlvbi4KICAgIGRhdGUgPSBkYXRlLnNwbGl0bGlu
+ZXMoKVstMV0KICAgIHBpZWNlc1siZGF0ZSJdID0gZGF0ZS5zdHJpcCgpLnJl
+cGxhY2UoIiAiLCAiVCIsIDEpLnJlcGxhY2UoIiAiLCAiIiwgMSkKCiAgICBy
+ZXR1cm4gcGllY2VzCgoKZGVmIHBsdXNfb3JfZG90KHBpZWNlczogRGljdFtz
+dHIsIEFueV0pIC0+IHN0cjoKICAgICIiIlJldHVybiBhICsgaWYgd2UgZG9u
+J3QgYWxyZWFkeSBoYXZlIG9uZSwgZWxzZSByZXR1cm4gYSAuIiIiCiAgICBp
+ZiAiKyIgaW4gcGllY2VzLmdldCgiY2xvc2VzdC10YWciLCAiIik6CiAgICAg
+ICAgcmV0dXJuICIuIgogICAgcmV0dXJuICIrIgoKCmRlZiByZW5kZXJfcGVw
+NDQwKHBpZWNlczogRGljdFtzdHIsIEFueV0pIC0+IHN0cjoKICAgICIiIkJ1
+aWxkIHVwIHZlcnNpb24gc3RyaW5nLCB3aXRoIHBvc3QtcmVsZWFzZSAibG9j
+YWwgdmVyc2lvbiBpZGVudGlmaWVyIi4KCiAgICBPdXIgZ29hbDogVEFHWytE
+SVNUQU5DRS5nSEVYWy5kaXJ0eV1dIC4gTm90ZSB0aGF0IGlmIHlvdQogICAg
+Z2V0IGEgdGFnZ2VkIGJ1aWxkIGFuZCB0aGVuIGRpcnR5IGl0LCB5b3UnbGwg
+Z2V0IFRBRyswLmdIRVguZGlydHkKCiAgICBFeGNlcHRpb25zOgogICAgMTog
+bm8gdGFncy4gZ2l0X2Rlc2NyaWJlIHdhcyBqdXN0IEhFWC4gMCt1bnRhZ2dl
+ZC5ESVNUQU5DRS5nSEVYWy5kaXJ0eV0KICAgICIiIgogICAgaWYgcGllY2Vz
+WyJjbG9zZXN0LXRhZyJdOgogICAgICAgIHJlbmRlcmVkID0gcGllY2VzWyJj
+bG9zZXN0LXRhZyJdCiAgICAgICAgaWYgcGllY2VzWyJkaXN0YW5jZSJdIG9y
+IHBpZWNlc1siZGlydHkiXToKICAgICAgICAgICAgcmVuZGVyZWQgKz0gcGx1
+c19vcl9kb3QocGllY2VzKQogICAgICAgICAgICByZW5kZXJlZCArPSAiJSVk
+LmclJXMiICUlIChwaWVjZXNbImRpc3RhbmNlIl0sIHBpZWNlc1sic2hvcnQi
+XSkKICAgICAgICAgICAgaWYgcGllY2VzWyJkaXJ0eSJdOgogICAgICAgICAg
+ICAgICAgcmVuZGVyZWQgKz0gIi5kaXJ0eSIKICAgIGVsc2U6CiAgICAgICAg
+IyBleGNlcHRpb24gIzEKICAgICAgICByZW5kZXJlZCA9ICIwK3VudGFnZ2Vk
+LiUlZC5nJSVzIiAlJSAocGllY2VzWyJkaXN0YW5jZSJdLAogICAgICAgICAg
+ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBwaWVjZXNbInNob3J0
+Il0pCiAgICAgICAgaWYgcGllY2VzWyJkaXJ0eSJdOgogICAgICAgICAgICBy
+ZW5kZXJlZCArPSAiLmRpcnR5IgogICAgcmV0dXJuIHJlbmRlcmVkCgoKZGVm
+IHJlbmRlcl9wZXA0NDBfYnJhbmNoKHBpZWNlczogRGljdFtzdHIsIEFueV0p
+IC0+IHN0cjoKICAgICIiIlRBR1tbLmRldjBdK0RJU1RBTkNFLmdIRVhbLmRp
+cnR5XV0gLgoKICAgIFRoZSAiLmRldjAiIG1lYW5zIG5vdCBtYXN0ZXIgYnJh
+bmNoLiBOb3RlIHRoYXQgLmRldjAgc29ydHMgYmFja3dhcmRzCiAgICAoYSBm
+ZWF0dXJlIGJyYW5jaCB3aWxsIGFwcGVhciAib2xkZXIiIHRoYW4gdGhlIG1h
+c3RlciBicmFuY2gpLgoKICAgIEV4Y2VwdGlvbnM6CiAgICAxOiBubyB0YWdz
+LiAwWy5kZXYwXSt1bnRhZ2dlZC5ESVNUQU5DRS5nSEVYWy5kaXJ0eV0KICAg
+ICIiIgogICAgaWYgcGllY2VzWyJjbG9zZXN0LXRhZyJdOgogICAgICAgIHJl
+bmRlcmVkID0gcGllY2VzWyJjbG9zZXN0LXRhZyJdCiAgICAgICAgaWYgcGll
+Y2VzWyJkaXN0YW5jZSJdIG9yIHBpZWNlc1siZGlydHkiXToKICAgICAgICAg
+ICAgaWYgcGllY2VzWyJicmFuY2giXSAhPSAibWFzdGVyIjoKICAgICAgICAg
+ICAgICAgIHJlbmRlcmVkICs9ICIuZGV2MCIKICAgICAgICAgICAgcmVuZGVy
+ZWQgKz0gcGx1c19vcl9kb3QocGllY2VzKQogICAgICAgICAgICByZW5kZXJl
+ZCArPSAiJSVkLmclJXMiICUlIChwaWVjZXNbImRpc3RhbmNlIl0sIHBpZWNl
+c1sic2hvcnQiXSkKICAgICAgICAgICAgaWYgcGllY2VzWyJkaXJ0eSJdOgog
+ICAgICAgICAgICAgICAgcmVuZGVyZWQgKz0gIi5kaXJ0eSIKICAgIGVsc2U6
+CiAgICAgICAgIyBleGNlcHRpb24gIzEKICAgICAgICByZW5kZXJlZCA9ICIw
+IgogICAgICAgIGlmIHBpZWNlc1siYnJhbmNoIl0gIT0gIm1hc3RlciI6CiAg
+ICAgICAgICAgIHJlbmRlcmVkICs9ICIuZGV2MCIKICAgICAgICByZW5kZXJl
+ZCArPSAiK3VudGFnZ2VkLiUlZC5nJSVzIiAlJSAocGllY2VzWyJkaXN0YW5j
+ZSJdLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg
+ICBwaWVjZXNbInNob3J0Il0pCiAgICAgICAgaWYgcGllY2VzWyJkaXJ0eSJd
+OgogICAgICAgICAgICByZW5kZXJlZCArPSAiLmRpcnR5IgogICAgcmV0dXJu
+IHJlbmRlcmVkCgoKZGVmIHBlcDQ0MF9zcGxpdF9wb3N0KHZlcjogc3RyKSAt
+PiBUdXBsZVtzdHIsIE9wdGlvbmFsW2ludF1dOgogICAgIiIiU3BsaXQgcGVw
+NDQwIHZlcnNpb24gc3RyaW5nIGF0IHRoZSBwb3N0LXJlbGVhc2Ugc2VnbWVu
+dC4KCiAgICBSZXR1cm5zIHRoZSByZWxlYXNlIHNlZ21lbnRzIGJlZm9yZSB0
+aGUgcG9zdC1yZWxlYXNlIGFuZCB0aGUKICAgIHBvc3QtcmVsZWFzZSB2ZXJz
+aW9uIG51bWJlciAob3IgLTEgaWYgbm8gcG9zdC1yZWxlYXNlIHNlZ21lbnQg
+aXMgcHJlc2VudCkuCiAgICAiIiIKICAgIHZjID0gc3RyLnNwbGl0KHZlciwg
+Ii5wb3N0IikKICAgIHJldHVybiB2Y1swXSwgaW50KHZjWzFdIG9yIDApIGlm
+IGxlbih2YykgPT0gMiBlbHNlIE5vbmUKCgpkZWYgcmVuZGVyX3BlcDQ0MF9w
+cmUocGllY2VzOiBEaWN0W3N0ciwgQW55XSkgLT4gc3RyOgogICAgIiIiVEFH
+Wy5wb3N0Ti5kZXZESVNUQU5DRV0gLS0gTm8gLWRpcnR5LgoKICAgIEV4Y2Vw
+dGlvbnM6CiAgICAxOiBubyB0YWdzLiAwLnBvc3QwLmRldkRJU1RBTkNFCiAg
+ICAiIiIKICAgIGlmIHBpZWNlc1siY2xvc2VzdC10YWciXToKICAgICAgICBp
+ZiBwaWVjZXNbImRpc3RhbmNlIl06CiAgICAgICAgICAgICMgdXBkYXRlIHRo
+ZSBwb3N0IHJlbGVhc2Ugc2VnbWVudAogICAgICAgICAgICB0YWdfdmVyc2lv
+biwgcG9zdF92ZXJzaW9uID0gcGVwNDQwX3NwbGl0X3Bvc3QocGllY2VzWyJj
+bG9zZXN0LXRhZyJdKQogICAgICAgICAgICByZW5kZXJlZCA9IHRhZ192ZXJz
+aW9uCiAgICAgICAgICAgIGlmIHBvc3RfdmVyc2lvbiBpcyBub3QgTm9uZToK
+ICAgICAgICAgICAgICAgIHJlbmRlcmVkICs9ICIucG9zdCUlZC5kZXYlJWQi
+ICUlIChwb3N0X3ZlcnNpb24gKyAxLCBwaWVjZXNbImRpc3RhbmNlIl0pCiAg
+ICAgICAgICAgIGVsc2U6CiAgICAgICAgICAgICAgICByZW5kZXJlZCArPSAi
+LnBvc3QwLmRldiUlZCIgJSUgKHBpZWNlc1siZGlzdGFuY2UiXSkKICAgICAg
+ICBlbHNlOgogICAgICAgICAgICAjIG5vIGNvbW1pdHMsIHVzZSB0aGUgdGFn
+IGFzIHRoZSB2ZXJzaW9uCiAgICAgICAgICAgIHJlbmRlcmVkID0gcGllY2Vz
+WyJjbG9zZXN0LXRhZyJdCiAgICBlbHNlOgogICAgICAgICMgZXhjZXB0aW9u
+ICMxCiAgICAgICAgcmVuZGVyZWQgPSAiMC5wb3N0MC5kZXYlJWQiICUlIHBp
+ZWNlc1siZGlzdGFuY2UiXQogICAgcmV0dXJuIHJlbmRlcmVkCgoKZGVmIHJl
+bmRlcl9wZXA0NDBfcG9zdChwaWVjZXM6IERpY3Rbc3RyLCBBbnldKSAtPiBz
+dHI6CiAgICAiIiJUQUdbLnBvc3RESVNUQU5DRVsuZGV2MF0rZ0hFWF0gLgoK
+ICAgIFRoZSAiLmRldjAiIG1lYW5zIGRpcnR5LiBOb3RlIHRoYXQgLmRldjAg
+c29ydHMgYmFja3dhcmRzCiAgICAoYSBkaXJ0eSB0cmVlIHdpbGwgYXBwZWFy
+ICJvbGRlciIgdGhhbiB0aGUgY29ycmVzcG9uZGluZyBjbGVhbiBvbmUpLAog
+ICAgYnV0IHlvdSBzaG91bGRuJ3QgYmUgcmVsZWFzaW5nIHNvZnR3YXJlIHdp
+dGggLWRpcnR5IGFueXdheXMuCgogICAgRXhjZXB0aW9uczoKICAgIDE6IG5v
+IHRhZ3MuIDAucG9zdERJU1RBTkNFWy5kZXYwXQogICAgIiIiCiAgICBpZiBw
+aWVjZXNbImNsb3Nlc3QtdGFnIl06CiAgICAgICAgcmVuZGVyZWQgPSBwaWVj
+ZXNbImNsb3Nlc3QtdGFnIl0KICAgICAgICBpZiBwaWVjZXNbImRpc3RhbmNl
+Il0gb3IgcGllY2VzWyJkaXJ0eSJdOgogICAgICAgICAgICByZW5kZXJlZCAr
+PSAiLnBvc3QlJWQiICUlIHBpZWNlc1siZGlzdGFuY2UiXQogICAgICAgICAg
+ICBpZiBwaWVjZXNbImRpcnR5Il06CiAgICAgICAgICAgICAgICByZW5kZXJl
+ZCArPSAiLmRldjAiCiAgICAgICAgICAgIHJlbmRlcmVkICs9IHBsdXNfb3Jf
+ZG90KHBpZWNlcykKICAgICAgICAgICAgcmVuZGVyZWQgKz0gImclJXMiICUl
+IHBpZWNlc1sic2hvcnQiXQogICAgZWxzZToKICAgICAgICAjIGV4Y2VwdGlv
+biAjMQogICAgICAgIHJlbmRlcmVkID0gIjAucG9zdCUlZCIgJSUgcGllY2Vz
+WyJkaXN0YW5jZSJdCiAgICAgICAgaWYgcGllY2VzWyJkaXJ0eSJdOgogICAg
+ICAgICAgICByZW5kZXJlZCArPSAiLmRldjAiCiAgICAgICAgcmVuZGVyZWQg
+Kz0gIitnJSVzIiAlJSBwaWVjZXNbInNob3J0Il0KICAgIHJldHVybiByZW5k
+ZXJlZAoKCmRlZiByZW5kZXJfcGVwNDQwX3Bvc3RfYnJhbmNoKHBpZWNlczog
+RGljdFtzdHIsIEFueV0pIC0+IHN0cjoKICAgICIiIlRBR1sucG9zdERJU1RB
+TkNFWy5kZXYwXStnSEVYWy5kaXJ0eV1dIC4KCiAgICBUaGUgIi5kZXYwIiBt
+ZWFucyBub3QgbWFzdGVyIGJyYW5jaC4KCiAgICBFeGNlcHRpb25zOgogICAg
+MTogbm8gdGFncy4gMC5wb3N0RElTVEFOQ0VbLmRldjBdK2dIRVhbLmRpcnR5
+XQogICAgIiIiCiAgICBpZiBwaWVjZXNbImNsb3Nlc3QtdGFnIl06CiAgICAg
+ICAgcmVuZGVyZWQgPSBwaWVjZXNbImNsb3Nlc3QtdGFnIl0KICAgICAgICBp
+ZiBwaWVjZXNbImRpc3RhbmNlIl0gb3IgcGllY2VzWyJkaXJ0eSJdOgogICAg
+ICAgICAgICByZW5kZXJlZCArPSAiLnBvc3QlJWQiICUlIHBpZWNlc1siZGlz
+dGFuY2UiXQogICAgICAgICAgICBpZiBwaWVjZXNbImJyYW5jaCJdICE9ICJt
+YXN0ZXIiOgogICAgICAgICAgICAgICAgcmVuZGVyZWQgKz0gIi5kZXYwIgog
+ICAgICAgICAgICByZW5kZXJlZCArPSBwbHVzX29yX2RvdChwaWVjZXMpCiAg
+ICAgICAgICAgIHJlbmRlcmVkICs9ICJnJSVzIiAlJSBwaWVjZXNbInNob3J0
+Il0KICAgICAgICAgICAgaWYgcGllY2VzWyJkaXJ0eSJdOgogICAgICAgICAg
+ICAgICAgcmVuZGVyZWQgKz0gIi5kaXJ0eSIKICAgIGVsc2U6CiAgICAgICAg
+IyBleGNlcHRpb24gIzEKICAgICAgICByZW5kZXJlZCA9ICIwLnBvc3QlJWQi
+ICUlIHBpZWNlc1siZGlzdGFuY2UiXQogICAgICAgIGlmIHBpZWNlc1siYnJh
+bmNoIl0gIT0gIm1hc3RlciI6CiAgICAgICAgICAgIHJlbmRlcmVkICs9ICIu
+ZGV2MCIKICAgICAgICByZW5kZXJlZCArPSAiK2clJXMiICUlIHBpZWNlc1si
+c2hvcnQiXQogICAgICAgIGlmIHBpZWNlc1siZGlydHkiXToKICAgICAgICAg
+ICAgcmVuZGVyZWQgKz0gIi5kaXJ0eSIKICAgIHJldHVybiByZW5kZXJlZAoK
+CmRlZiByZW5kZXJfcGVwNDQwX29sZChwaWVjZXM6IERpY3Rbc3RyLCBBbnld
+KSAtPiBzdHI6CiAgICAiIiJUQUdbLnBvc3RESVNUQU5DRVsuZGV2MF1dIC4K
+CiAgICBUaGUgIi5kZXYwIiBtZWFucyBkaXJ0eS4KCiAgICBFeGNlcHRpb25z
+OgogICAgMTogbm8gdGFncy4gMC5wb3N0RElTVEFOQ0VbLmRldjBdCiAgICAi
+IiIKICAgIGlmIHBpZWNlc1siY2xvc2VzdC10YWciXToKICAgICAgICByZW5k
+ZXJlZCA9IHBpZWNlc1siY2xvc2VzdC10YWciXQogICAgICAgIGlmIHBpZWNl
+c1siZGlzdGFuY2UiXSBvciBwaWVjZXNbImRpcnR5Il06CiAgICAgICAgICAg
+IHJlbmRlcmVkICs9ICIucG9zdCUlZCIgJSUgcGllY2VzWyJkaXN0YW5jZSJd
+CiAgICAgICAgICAgIGlmIHBpZWNlc1siZGlydHkiXToKICAgICAgICAgICAg
+ICAgIHJlbmRlcmVkICs9ICIuZGV2MCIKICAgIGVsc2U6CiAgICAgICAgIyBl
+eGNlcHRpb24gIzEKICAgICAgICByZW5kZXJlZCA9ICIwLnBvc3QlJWQiICUl
+IHBpZWNlc1siZGlzdGFuY2UiXQogICAgICAgIGlmIHBpZWNlc1siZGlydHki
+XToKICAgICAgICAgICAgcmVuZGVyZWQgKz0gIi5kZXYwIgogICAgcmV0dXJu
+IHJlbmRlcmVkCgoKZGVmIHJlbmRlcl9naXRfZGVzY3JpYmUocGllY2VzOiBE
+aWN0W3N0ciwgQW55XSkgLT4gc3RyOgogICAgIiIiVEFHWy1ESVNUQU5DRS1n
+SEVYXVstZGlydHldLgoKICAgIExpa2UgJ2dpdCBkZXNjcmliZSAtLXRhZ3Mg
+LS1kaXJ0eSAtLWFsd2F5cycuCgogICAgRXhjZXB0aW9uczoKICAgIDE6IG5v
+IHRhZ3MuIEhFWFstZGlydHldICAobm90ZTogbm8gJ2cnIHByZWZpeCkKICAg
+ICIiIgogICAgaWYgcGllY2VzWyJjbG9zZXN0LXRhZyJdOgogICAgICAgIHJl
+bmRlcmVkID0gcGllY2VzWyJjbG9zZXN0LXRhZyJdCiAgICAgICAgaWYgcGll
+Y2VzWyJkaXN0YW5jZSJdOgogICAgICAgICAgICByZW5kZXJlZCArPSAiLSUl
+ZC1nJSVzIiAlJSAocGllY2VzWyJkaXN0YW5jZSJdLCBwaWVjZXNbInNob3J0
+Il0pCiAgICBlbHNlOgogICAgICAgICMgZXhjZXB0aW9uICMxCiAgICAgICAg
+cmVuZGVyZWQgPSBwaWVjZXNbInNob3J0Il0KICAgIGlmIHBpZWNlc1siZGly
+dHkiXToKICAgICAgICByZW5kZXJlZCArPSAiLWRpcnR5IgogICAgcmV0dXJu
+IHJlbmRlcmVkCgoKZGVmIHJlbmRlcl9naXRfZGVzY3JpYmVfbG9uZyhwaWVj
+ZXM6IERpY3Rbc3RyLCBBbnldKSAtPiBzdHI6CiAgICAiIiJUQUctRElTVEFO
+Q0UtZ0hFWFstZGlydHldLgoKICAgIExpa2UgJ2dpdCBkZXNjcmliZSAtLXRh
+Z3MgLS1kaXJ0eSAtLWFsd2F5cyAtbG9uZycuCiAgICBUaGUgZGlzdGFuY2Uv
+aGFzaCBpcyB1bmNvbmRpdGlvbmFsLgoKICAgIEV4Y2VwdGlvbnM6CiAgICAx
+OiBubyB0YWdzLiBIRVhbLWRpcnR5XSAgKG5vdGU6IG5vICdnJyBwcmVmaXgp
+CiAgICAiIiIKICAgIGlmIHBpZWNlc1siY2xvc2VzdC10YWciXToKICAgICAg
+ICByZW5kZXJlZCA9IHBpZWNlc1siY2xvc2VzdC10YWciXQogICAgICAgIHJl
+bmRlcmVkICs9ICItJSVkLWclJXMiICUlIChwaWVjZXNbImRpc3RhbmNlIl0s
+IHBpZWNlc1sic2hvcnQiXSkKICAgIGVsc2U6CiAgICAgICAgIyBleGNlcHRp
+b24gIzEKICAgICAgICByZW5kZXJlZCA9IHBpZWNlc1sic2hvcnQiXQogICAg
+aWYgcGllY2VzWyJkaXJ0eSJdOgogICAgICAgIHJlbmRlcmVkICs9ICItZGly
+dHkiCiAgICByZXR1cm4gcmVuZGVyZWQKCgpkZWYgcmVuZGVyKHBpZWNlczog
+RGljdFtzdHIsIEFueV0sIHN0eWxlOiBzdHIpIC0+IERpY3Rbc3RyLCBBbnld
+OgogICAgIiIiUmVuZGVyIHRoZSBnaXZlbiB2ZXJzaW9uIHBpZWNlcyBpbnRv
+IHRoZSByZXF1ZXN0ZWQgc3R5bGUuIiIiCiAgICBpZiBwaWVjZXNbImVycm9y
+Il06CiAgICAgICAgcmV0dXJuIHsidmVyc2lvbiI6ICJ1bmtub3duIiwKICAg
+ICAgICAgICAgICAgICJmdWxsLXJldmlzaW9uaWQiOiBwaWVjZXMuZ2V0KCJs
+b25nIiksCiAgICAgICAgICAgICAgICAiZGlydHkiOiBOb25lLAogICAgICAg
+ICAgICAgICAgImVycm9yIjogcGllY2VzWyJlcnJvciJdLAogICAgICAgICAg
+ICAgICAgImRhdGUiOiBOb25lfQoKICAgIGlmIG5vdCBzdHlsZSBvciBzdHls
+ZSA9PSAiZGVmYXVsdCI6CiAgICAgICAgc3R5bGUgPSAicGVwNDQwIiAgIyB0
+aGUgZGVmYXVsdAoKICAgIGlmIHN0eWxlID09ICJwZXA0NDAiOgogICAgICAg
+IHJlbmRlcmVkID0gcmVuZGVyX3BlcDQ0MChwaWVjZXMpCiAgICBlbGlmIHN0
+eWxlID09ICJwZXA0NDAtYnJhbmNoIjoKICAgICAgICByZW5kZXJlZCA9IHJl
+bmRlcl9wZXA0NDBfYnJhbmNoKHBpZWNlcykKICAgIGVsaWYgc3R5bGUgPT0g
+InBlcDQ0MC1wcmUiOgogICAgICAgIHJlbmRlcmVkID0gcmVuZGVyX3BlcDQ0
+MF9wcmUocGllY2VzKQogICAgZWxpZiBzdHlsZSA9PSAicGVwNDQwLXBvc3Qi
+OgogICAgICAgIHJlbmRlcmVkID0gcmVuZGVyX3BlcDQ0MF9wb3N0KHBpZWNl
+cykKICAgIGVsaWYgc3R5bGUgPT0gInBlcDQ0MC1wb3N0LWJyYW5jaCI6CiAg
+ICAgICAgcmVuZGVyZWQgPSByZW5kZXJfcGVwNDQwX3Bvc3RfYnJhbmNoKHBp
+ZWNlcykKICAgIGVsaWYgc3R5bGUgPT0gInBlcDQ0MC1vbGQiOgogICAgICAg
+IHJlbmRlcmVkID0gcmVuZGVyX3BlcDQ0MF9vbGQocGllY2VzKQogICAgZWxp
+ZiBzdHlsZSA9PSAiZ2l0LWRlc2NyaWJlIjoKICAgICAgICByZW5kZXJlZCA9
+IHJlbmRlcl9naXRfZGVzY3JpYmUocGllY2VzKQogICAgZWxpZiBzdHlsZSA9
+PSAiZ2l0LWRlc2NyaWJlLWxvbmciOgogICAgICAgIHJlbmRlcmVkID0gcmVu
+ZGVyX2dpdF9kZXNjcmliZV9sb25nKHBpZWNlcykKICAgIGVsc2U6CiAgICAg
+ICAgcmFpc2UgVmFsdWVFcnJvcigidW5rbm93biBzdHlsZSAnJSVzJyIgJSUg
+c3R5bGUpCgogICAgcmV0dXJuIHsidmVyc2lvbiI6IHJlbmRlcmVkLCAiZnVs
+bC1yZXZpc2lvbmlkIjogcGllY2VzWyJsb25nIl0sCiAgICAgICAgICAgICJk
+aXJ0eSI6IHBpZWNlc1siZGlydHkiXSwgImVycm9yIjogTm9uZSwKICAgICAg
+ICAgICAgImRhdGUiOiBwaWVjZXMuZ2V0KCJkYXRlIil9CgoKZGVmIGdldF92
+ZXJzaW9ucygpIC0+IERpY3Rbc3RyLCBBbnldOgogICAgIiIiR2V0IHZlcnNp
+b24gaW5mb3JtYXRpb24gb3IgcmV0dXJuIGRlZmF1bHQgaWYgdW5hYmxlIHRv
+IGRvIHNvLiIiIgogICAgIyBJIGFtIGluIF92ZXJzaW9uLnB5LCB3aGljaCBs
+aXZlcyBhdCBST09UL1ZFUlNJT05GSUxFX1NPVVJDRS4gSWYgd2UgaGF2ZQog
+ICAgIyBfX2ZpbGVfXywgd2UgY2FuIHdvcmsgYmFja3dhcmRzIGZyb20gdGhl
+cmUgdG8gdGhlIHJvb3QuIFNvbWUKICAgICMgcHkyZXhlL2JiZnJlZXplL25v
+bi1DUHl0aG9uIGltcGxlbWVudGF0aW9ucyBkb24ndCBkbyBfX2ZpbGVfXywg
+aW4gd2hpY2gKICAgICMgY2FzZSB3ZSBjYW4gb25seSB1c2UgZXhwYW5kZWQg
+a2V5d29yZHMuCgogICAgY2ZnID0gZ2V0X2NvbmZpZygpCiAgICB2ZXJib3Nl
+ID0gY2ZnLnZlcmJvc2UKCiAgICB0cnk6CiAgICAgICAgcmV0dXJuIGdpdF92
+ZXJzaW9uc19mcm9tX2tleXdvcmRzKGdldF9rZXl3b3JkcygpLCBjZmcudGFn
+X3ByZWZpeCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgdmVyYm9zZSkKICAgIGV4Y2VwdCBOb3RUaGlzTWV0aG9kOgogICAg
+ICAgIHBhc3MKCiAgICB0cnk6CiAgICAgICAgcm9vdCA9IG9zLnBhdGgucmVh
+bHBhdGgoX19maWxlX18pCiAgICAgICAgIyB2ZXJzaW9uZmlsZV9zb3VyY2Ug
+aXMgdGhlIHJlbGF0aXZlIHBhdGggZnJvbSB0aGUgdG9wIG9mIHRoZSBzb3Vy
+Y2UKICAgICAgICAjIHRyZWUgKHdoZXJlIHRoZSAuZ2l0IGRpcmVjdG9yeSBt
+aWdodCBsaXZlKSB0byB0aGlzIGZpbGUuIEludmVydAogICAgICAgICMgdGhp
+cyB0byBmaW5kIHRoZSByb290IGZyb20gX19maWxlX18uCiAgICAgICAgZm9y
+IF8gaW4gY2ZnLnZlcnNpb25maWxlX3NvdXJjZS5zcGxpdCgnLycpOgogICAg
+ICAgICAgICByb290ID0gb3MucGF0aC5kaXJuYW1lKHJvb3QpCiAgICBleGNl
+cHQgTmFtZUVycm9yOgogICAgICAgIHJldHVybiB7InZlcnNpb24iOiAiMCt1
+bmtub3duIiwgImZ1bGwtcmV2aXNpb25pZCI6IE5vbmUsCiAgICAgICAgICAg
+ICAgICAiZGlydHkiOiBOb25lLAogICAgICAgICAgICAgICAgImVycm9yIjog
+InVuYWJsZSB0byBmaW5kIHJvb3Qgb2Ygc291cmNlIHRyZWUiLAogICAgICAg
+ICAgICAgICAgImRhdGUiOiBOb25lfQoKICAgIHRyeToKICAgICAgICBwaWVj
+ZXMgPSBnaXRfcGllY2VzX2Zyb21fdmNzKGNmZy50YWdfcHJlZml4LCByb290
+LCB2ZXJib3NlKQogICAgICAgIHJldHVybiByZW5kZXIocGllY2VzLCBjZmcu
+c3R5bGUpCiAgICBleGNlcHQgTm90VGhpc01ldGhvZDoKICAgICAgICBwYXNz
+CgogICAgdHJ5OgogICAgICAgIGlmIGNmZy5wYXJlbnRkaXJfcHJlZml4Ogog
+ICAgICAgICAgICByZXR1cm4gdmVyc2lvbnNfZnJvbV9wYXJlbnRkaXIoY2Zn
+LnBhcmVudGRpcl9wcmVmaXgsIHJvb3QsIHZlcmJvc2UpCiAgICBleGNlcHQg
+Tm90VGhpc01ldGhvZDoKICAgICAgICBwYXNzCgogICAgcmV0dXJuIHsidmVy
+c2lvbiI6ICIwK3Vua25vd24iLCAiZnVsbC1yZXZpc2lvbmlkIjogTm9uZSwK
+ICAgICAgICAgICAgImRpcnR5IjogTm9uZSwKICAgICAgICAgICAgImVycm9y
+IjogInVuYWJsZSB0byBjb21wdXRlIHZlcnNpb24iLCAiZGF0ZSI6IE5vbmV9
+CicnJwoKCkByZWdpc3Rlcl92Y3NfaGFuZGxlcigiZ2l0IiwgImdldF9rZXl3
+b3JkcyIpCmRlZiBnaXRfZ2V0X2tleXdvcmRzKHZlcnNpb25maWxlX2Ficzog
+c3RyKSAtPiBEaWN0W3N0ciwgc3RyXToKICAgICIiIkV4dHJhY3QgdmVyc2lv
+biBpbmZvcm1hdGlvbiBmcm9tIHRoZSBnaXZlbiBmaWxlLiIiIgogICAgIyB0
+aGUgY29kZSBlbWJlZGRlZCBpbiBfdmVyc2lvbi5weSBjYW4ganVzdCBmZXRj
+aCB0aGUgdmFsdWUgb2YgdGhlc2UKICAgICMga2V5d29yZHMuIFdoZW4gdXNl
+ZCBmcm9tIHNldHVwLnB5LCB3ZSBkb24ndCB3YW50IHRvIGltcG9ydCBfdmVy
+c2lvbi5weSwKICAgICMgc28gd2UgZG8gaXQgd2l0aCBhIHJlZ2V4cCBpbnN0
+ZWFkLiBUaGlzIGZ1bmN0aW9uIGlzIG5vdCB1c2VkIGZyb20KICAgICMgX3Zl
+cnNpb24ucHkuCiAgICBrZXl3b3JkczogRGljdFtzdHIsIHN0cl0gPSB7fQog
+ICAgdHJ5OgogICAgICAgIHdpdGggb3Blbih2ZXJzaW9uZmlsZV9hYnMsICJy
+IikgYXMgZm9iajoKICAgICAgICAgICAgZm9yIGxpbmUgaW4gZm9iajoKICAg
+ICAgICAgICAgICAgIGlmIGxpbmUuc3RyaXAoKS5zdGFydHN3aXRoKCJnaXRf
+cmVmbmFtZXMgPSIpOgogICAgICAgICAgICAgICAgICAgIG1vID0gcmUuc2Vh
+cmNoKHInPVxzKiIoLiopIicsIGxpbmUpCiAgICAgICAgICAgICAgICAgICAg
+aWYgbW86CiAgICAgICAgICAgICAgICAgICAgICAgIGtleXdvcmRzWyJyZWZu
+YW1lcyJdID0gbW8uZ3JvdXAoMSkKICAgICAgICAgICAgICAgIGlmIGxpbmUu
+c3RyaXAoKS5zdGFydHN3aXRoKCJnaXRfZnVsbCA9Iik6CiAgICAgICAgICAg
+ICAgICAgICAgbW8gPSByZS5zZWFyY2gocic9XHMqIiguKikiJywgbGluZSkK
+ICAgICAgICAgICAgICAgICAgICBpZiBtbzoKICAgICAgICAgICAgICAgICAg
+ICAgICAga2V5d29yZHNbImZ1bGwiXSA9IG1vLmdyb3VwKDEpCiAgICAgICAg
+ICAgICAgICBpZiBsaW5lLnN0cmlwKCkuc3RhcnRzd2l0aCgiZ2l0X2RhdGUg
+PSIpOgogICAgICAgICAgICAgICAgICAgIG1vID0gcmUuc2VhcmNoKHInPVxz
+KiIoLiopIicsIGxpbmUpCiAgICAgICAgICAgICAgICAgICAgaWYgbW86CiAg
+ICAgICAgICAgICAgICAgICAgICAgIGtleXdvcmRzWyJkYXRlIl0gPSBtby5n
+cm91cCgxKQogICAgZXhjZXB0IE9TRXJyb3I6CiAgICAgICAgcGFzcwogICAg
+cmV0dXJuIGtleXdvcmRzCgoKQHJlZ2lzdGVyX3Zjc19oYW5kbGVyKCJnaXQi
+LCAia2V5d29yZHMiKQpkZWYgZ2l0X3ZlcnNpb25zX2Zyb21fa2V5d29yZHMo
+CiAgICBrZXl3b3JkczogRGljdFtzdHIsIHN0cl0sCiAgICB0YWdfcHJlZml4
+OiBzdHIsCiAgICB2ZXJib3NlOiBib29sLAopIC0+IERpY3Rbc3RyLCBBbnld
+OgogICAgIiIiR2V0IHZlcnNpb24gaW5mb3JtYXRpb24gZnJvbSBnaXQga2V5
+d29yZHMuIiIiCiAgICBpZiAicmVmbmFtZXMiIG5vdCBpbiBrZXl3b3JkczoK
+ICAgICAgICByYWlzZSBOb3RUaGlzTWV0aG9kKCJTaG9ydCB2ZXJzaW9uIGZp
+bGUgZm91bmQiKQogICAgZGF0ZSA9IGtleXdvcmRzLmdldCgiZGF0ZSIpCiAg
+ICBpZiBkYXRlIGlzIG5vdCBOb25lOgogICAgICAgICMgVXNlIG9ubHkgdGhl
+IGxhc3QgbGluZS4gIFByZXZpb3VzIGxpbmVzIG1heSBjb250YWluIEdQRyBz
+aWduYXR1cmUKICAgICAgICAjIGluZm9ybWF0aW9uLgogICAgICAgIGRhdGUg
+PSBkYXRlLnNwbGl0bGluZXMoKVstMV0KCiAgICAgICAgIyBnaXQtMi4yLjAg
+YWRkZWQgIiVjSSIsIHdoaWNoIGV4cGFuZHMgdG8gYW4gSVNPLTg2MDEgLWNv
+bXBsaWFudAogICAgICAgICMgZGF0ZXN0YW1wLiBIb3dldmVyIHdlIHByZWZl
+ciAiJWNpIiAod2hpY2ggZXhwYW5kcyB0byBhbiAiSVNPLTg2MDEKICAgICAg
+ICAjIC1saWtlIiBzdHJpbmcsIHdoaWNoIHdlIG11c3QgdGhlbiBlZGl0IHRv
+IG1ha2UgY29tcGxpYW50KSwgYmVjYXVzZQogICAgICAgICMgaXQncyBiZWVu
+IGFyb3VuZCBzaW5jZSBnaXQtMS41LjMsIGFuZCBpdCdzIHRvbyBkaWZmaWN1
+bHQgdG8KICAgICAgICAjIGRpc2NvdmVyIHdoaWNoIHZlcnNpb24gd2UncmUg
+dXNpbmcsIG9yIHRvIHdvcmsgYXJvdW5kIHVzaW5nIGFuCiAgICAgICAgIyBv
+bGRlciBvbmUuCiAgICAgICAgZGF0ZSA9IGRhdGUuc3RyaXAoKS5yZXBsYWNl
+KCIgIiwgIlQiLCAxKS5yZXBsYWNlKCIgIiwgIiIsIDEpCiAgICByZWZuYW1l
+cyA9IGtleXdvcmRzWyJyZWZuYW1lcyJdLnN0cmlwKCkKICAgIGlmIHJlZm5h
+bWVzLnN0YXJ0c3dpdGgoIiRGb3JtYXQiKToKICAgICAgICBpZiB2ZXJib3Nl
+OgogICAgICAgICAgICBwcmludCgia2V5d29yZHMgYXJlIHVuZXhwYW5kZWQs
+IG5vdCB1c2luZyIpCiAgICAgICAgcmFpc2UgTm90VGhpc01ldGhvZCgidW5l
+eHBhbmRlZCBrZXl3b3Jkcywgbm90IGEgZ2l0LWFyY2hpdmUgdGFyYmFsbCIp
+CiAgICByZWZzID0ge3Iuc3RyaXAoKSBmb3IgciBpbiByZWZuYW1lcy5zdHJp
+cCgiKCkiKS5zcGxpdCgiLCIpfQogICAgIyBzdGFydGluZyBpbiBnaXQtMS44
+LjMsIHRhZ3MgYXJlIGxpc3RlZCBhcyAidGFnOiBmb28tMS4wIiBpbnN0ZWFk
+IG9mCiAgICAjIGp1c3QgImZvby0xLjAiLiBJZiB3ZSBzZWUgYSAidGFnOiAi
+IHByZWZpeCwgcHJlZmVyIHRob3NlLgogICAgVEFHID0gInRhZzogIgogICAg
+dGFncyA9IHtyW2xlbihUQUcpOl0gZm9yIHIgaW4gcmVmcyBpZiByLnN0YXJ0
+c3dpdGgoVEFHKX0KICAgIGlmIG5vdCB0YWdzOgogICAgICAgICMgRWl0aGVy
+IHdlJ3JlIHVzaW5nIGdpdCA8IDEuOC4zLCBvciB0aGVyZSByZWFsbHkgYXJl
+IG5vIHRhZ3MuIFdlIHVzZQogICAgICAgICMgYSBoZXVyaXN0aWM6IGFzc3Vt
+ZSBhbGwgdmVyc2lvbiB0YWdzIGhhdmUgYSBkaWdpdC4gVGhlIG9sZCBnaXQg
+JWQKICAgICAgICAjIGV4cGFuc2lvbiBiZWhhdmVzIGxpa2UgZ2l0IGxvZyAt
+LWRlY29yYXRlPXNob3J0IGFuZCBzdHJpcHMgb3V0IHRoZQogICAgICAgICMg
+cmVmcy9oZWFkcy8gYW5kIHJlZnMvdGFncy8gcHJlZml4ZXMgdGhhdCB3b3Vs
+ZCBsZXQgdXMgZGlzdGluZ3Vpc2gKICAgICAgICAjIGJldHdlZW4gYnJhbmNo
+ZXMgYW5kIHRhZ3MuIEJ5IGlnbm9yaW5nIHJlZm5hbWVzIHdpdGhvdXQgZGln
+aXRzLCB3ZQogICAgICAgICMgZmlsdGVyIG91dCBtYW55IGNvbW1vbiBicmFu
+Y2ggbmFtZXMgbGlrZSAicmVsZWFzZSIgYW5kCiAgICAgICAgIyAic3RhYmls
+aXphdGlvbiIsIGFzIHdlbGwgYXMgIkhFQUQiIGFuZCAibWFzdGVyIi4KICAg
+ICAgICB0YWdzID0ge3IgZm9yIHIgaW4gcmVmcyBpZiByZS5zZWFyY2gocidc
+ZCcsIHIpfQogICAgICAgIGlmIHZlcmJvc2U6CiAgICAgICAgICAgIHByaW50
+KCJkaXNjYXJkaW5nICclcycsIG5vIGRpZ2l0cyIgJSAiLCIuam9pbihyZWZz
+IC0gdGFncykpCiAgICBpZiB2ZXJib3NlOgogICAgICAgIHByaW50KCJsaWtl
+bHkgdGFnczogJXMiICUgIiwiLmpvaW4oc29ydGVkKHRhZ3MpKSkKICAgIGZv
+ciByZWYgaW4gc29ydGVkKHRhZ3MpOgogICAgICAgICMgc29ydGluZyB3aWxs
+IHByZWZlciBlLmcuICIyLjAiIG92ZXIgIjIuMHJjMSIKICAgICAgICBpZiBy
+ZWYuc3RhcnRzd2l0aCh0YWdfcHJlZml4KToKICAgICAgICAgICAgciA9IHJl
+ZltsZW4odGFnX3ByZWZpeCk6XQogICAgICAgICAgICAjIEZpbHRlciBvdXQg
+cmVmcyB0aGF0IGV4YWN0bHkgbWF0Y2ggcHJlZml4IG9yIHRoYXQgZG9uJ3Qg
+c3RhcnQKICAgICAgICAgICAgIyB3aXRoIGEgbnVtYmVyIG9uY2UgdGhlIHBy
+ZWZpeCBpcyBzdHJpcHBlZCAobW9zdGx5IGEgY29uY2VybgogICAgICAgICAg
+ICAjIHdoZW4gcHJlZml4IGlzICcnKQogICAgICAgICAgICBpZiBub3QgcmUu
+bWF0Y2gocidcZCcsIHIpOgogICAgICAgICAgICAgICAgY29udGludWUKICAg
+ICAgICAgICAgaWYgdmVyYm9zZToKICAgICAgICAgICAgICAgIHByaW50KCJw
+aWNraW5nICVzIiAlIHIpCiAgICAgICAgICAgIHJldHVybiB7InZlcnNpb24i
+OiByLAogICAgICAgICAgICAgICAgICAgICJmdWxsLXJldmlzaW9uaWQiOiBr
+ZXl3b3Jkc1siZnVsbCJdLnN0cmlwKCksCiAgICAgICAgICAgICAgICAgICAg
+ImRpcnR5IjogRmFsc2UsICJlcnJvciI6IE5vbmUsCiAgICAgICAgICAgICAg
+ICAgICAgImRhdGUiOiBkYXRlfQogICAgIyBubyBzdWl0YWJsZSB0YWdzLCBz
+byB2ZXJzaW9uIGlzICIwK3Vua25vd24iLCBidXQgZnVsbCBoZXggaXMgc3Rp
+bGwgdGhlcmUKICAgIGlmIHZlcmJvc2U6CiAgICAgICAgcHJpbnQoIm5vIHN1
+aXRhYmxlIHRhZ3MsIHVzaW5nIHVua25vd24gKyBmdWxsIHJldmlzaW9uIGlk
+IikKICAgIHJldHVybiB7InZlcnNpb24iOiAiMCt1bmtub3duIiwKICAgICAg
+ICAgICAgImZ1bGwtcmV2aXNpb25pZCI6IGtleXdvcmRzWyJmdWxsIl0uc3Ry
+aXAoKSwKICAgICAgICAgICAgImRpcnR5IjogRmFsc2UsICJlcnJvciI6ICJu
+byBzdWl0YWJsZSB0YWdzIiwgImRhdGUiOiBOb25lfQoKCkByZWdpc3Rlcl92
+Y3NfaGFuZGxlcigiZ2l0IiwgInBpZWNlc19mcm9tX3ZjcyIpCmRlZiBnaXRf
+cGllY2VzX2Zyb21fdmNzKAogICAgdGFnX3ByZWZpeDogc3RyLAogICAgcm9v
+dDogc3RyLAogICAgdmVyYm9zZTogYm9vbCwKICAgIHJ1bm5lcjogQ2FsbGFi
+bGUgPSBydW5fY29tbWFuZAopIC0+IERpY3Rbc3RyLCBBbnldOgogICAgIiIi
+R2V0IHZlcnNpb24gZnJvbSAnZ2l0IGRlc2NyaWJlJyBpbiB0aGUgcm9vdCBv
+ZiB0aGUgc291cmNlIHRyZWUuCgogICAgVGhpcyBvbmx5IGdldHMgY2FsbGVk
+IGlmIHRoZSBnaXQtYXJjaGl2ZSAnc3Vic3QnIGtleXdvcmRzIHdlcmUgKm5v
+dCoKICAgIGV4cGFuZGVkLCBhbmQgX3ZlcnNpb24ucHkgaGFzbid0IGFscmVh
+ZHkgYmVlbiByZXdyaXR0ZW4gd2l0aCBhIHNob3J0CiAgICB2ZXJzaW9uIHN0
+cmluZywgbWVhbmluZyB3ZSdyZSBpbnNpZGUgYSBjaGVja2VkIG91dCBzb3Vy
+Y2UgdHJlZS4KICAgICIiIgogICAgR0lUUyA9IFsiZ2l0Il0KICAgIGlmIHN5
+cy5wbGF0Zm9ybSA9PSAid2luMzIiOgogICAgICAgIEdJVFMgPSBbImdpdC5j
+bWQiLCAiZ2l0LmV4ZSJdCgogICAgIyBHSVRfRElSIGNhbiBpbnRlcmZlcmUg
+d2l0aCBjb3JyZWN0IG9wZXJhdGlvbiBvZiBWZXJzaW9uZWVyLgogICAgIyBJ
+dCBtYXkgYmUgaW50ZW5kZWQgdG8gYmUgcGFzc2VkIHRvIHRoZSBWZXJzaW9u
+ZWVyLXZlcnNpb25lZCBwcm9qZWN0LAogICAgIyBidXQgdGhhdCBzaG91bGQg
+bm90IGNoYW5nZSB3aGVyZSB3ZSBnZXQgb3VyIHZlcnNpb24gZnJvbS4KICAg
+IGVudiA9IG9zLmVudmlyb24uY29weSgpCiAgICBlbnYucG9wKCJHSVRfRElS
+IiwgTm9uZSkKICAgIHJ1bm5lciA9IGZ1bmN0b29scy5wYXJ0aWFsKHJ1bm5l
+ciwgZW52PWVudikKCiAgICBfLCByYyA9IHJ1bm5lcihHSVRTLCBbInJldi1w
+YXJzZSIsICItLWdpdC1kaXIiXSwgY3dkPXJvb3QsCiAgICAgICAgICAgICAg
+ICAgICBoaWRlX3N0ZGVycj1ub3QgdmVyYm9zZSkKICAgIGlmIHJjICE9IDA6
+CiAgICAgICAgaWYgdmVyYm9zZToKICAgICAgICAgICAgcHJpbnQoIkRpcmVj
+dG9yeSAlcyBub3QgdW5kZXIgZ2l0IGNvbnRyb2wiICUgcm9vdCkKICAgICAg
+ICByYWlzZSBOb3RUaGlzTWV0aG9kKCInZ2l0IHJldi1wYXJzZSAtLWdpdC1k
+aXInIHJldHVybmVkIGVycm9yIikKCiAgICAjIGlmIHRoZXJlIGlzIGEgdGFn
+IG1hdGNoaW5nIHRhZ19wcmVmaXgsIHRoaXMgeWllbGRzIFRBRy1OVU0tZ0hF
+WFstZGlydHldCiAgICAjIGlmIHRoZXJlIGlzbid0IG9uZSwgdGhpcyB5aWVs
+ZHMgSEVYWy1kaXJ0eV0gKG5vIE5VTSkKICAgIGRlc2NyaWJlX291dCwgcmMg
+PSBydW5uZXIoR0lUUywgWwogICAgICAgICJkZXNjcmliZSIsICItLXRhZ3Mi
+LCAiLS1kaXJ0eSIsICItLWFsd2F5cyIsICItLWxvbmciLAogICAgICAgICIt
+LW1hdGNoIiwgZiJ7dGFnX3ByZWZpeH1bWzpkaWdpdDpdXSoiCiAgICBdLCBj
+d2Q9cm9vdCkKICAgICMgLS1sb25nIHdhcyBhZGRlZCBpbiBnaXQtMS41LjUK
+ICAgIGlmIGRlc2NyaWJlX291dCBpcyBOb25lOgogICAgICAgIHJhaXNlIE5v
+dFRoaXNNZXRob2QoIidnaXQgZGVzY3JpYmUnIGZhaWxlZCIpCiAgICBkZXNj
+cmliZV9vdXQgPSBkZXNjcmliZV9vdXQuc3RyaXAoKQogICAgZnVsbF9vdXQs
+IHJjID0gcnVubmVyKEdJVFMsIFsicmV2LXBhcnNlIiwgIkhFQUQiXSwgY3dk
+PXJvb3QpCiAgICBpZiBmdWxsX291dCBpcyBOb25lOgogICAgICAgIHJhaXNl
+IE5vdFRoaXNNZXRob2QoIidnaXQgcmV2LXBhcnNlJyBmYWlsZWQiKQogICAg
+ZnVsbF9vdXQgPSBmdWxsX291dC5zdHJpcCgpCgogICAgcGllY2VzOiBEaWN0
+W3N0ciwgQW55XSA9IHt9CiAgICBwaWVjZXNbImxvbmciXSA9IGZ1bGxfb3V0
+CiAgICBwaWVjZXNbInNob3J0Il0gPSBmdWxsX291dFs6N10gICMgbWF5YmUg
+aW1wcm92ZWQgbGF0ZXIKICAgIHBpZWNlc1siZXJyb3IiXSA9IE5vbmUKCiAg
+ICBicmFuY2hfbmFtZSwgcmMgPSBydW5uZXIoR0lUUywgWyJyZXYtcGFyc2Ui
+LCAiLS1hYmJyZXYtcmVmIiwgIkhFQUQiXSwKICAgICAgICAgICAgICAgICAg
+ICAgICAgICAgICBjd2Q9cm9vdCkKICAgICMgLS1hYmJyZXYtcmVmIHdhcyBh
+ZGRlZCBpbiBnaXQtMS42LjMKICAgIGlmIHJjICE9IDAgb3IgYnJhbmNoX25h
+bWUgaXMgTm9uZToKICAgICAgICByYWlzZSBOb3RUaGlzTWV0aG9kKCInZ2l0
+IHJldi1wYXJzZSAtLWFiYnJldi1yZWYnIHJldHVybmVkIGVycm9yIikKICAg
+IGJyYW5jaF9uYW1lID0gYnJhbmNoX25hbWUuc3RyaXAoKQoKICAgIGlmIGJy
+YW5jaF9uYW1lID09ICJIRUFEIjoKICAgICAgICAjIElmIHdlIGFyZW4ndCBl
+eGFjdGx5IG9uIGEgYnJhbmNoLCBwaWNrIGEgYnJhbmNoIHdoaWNoIHJlcHJl
+c2VudHMKICAgICAgICAjIHRoZSBjdXJyZW50IGNvbW1pdC4gSWYgYWxsIGVs
+c2UgZmFpbHMsIHdlIGFyZSBvbiBhIGJyYW5jaGxlc3MKICAgICAgICAjIGNv
+bW1pdC4KICAgICAgICBicmFuY2hlcywgcmMgPSBydW5uZXIoR0lUUywgWyJi
+cmFuY2giLCAiLS1jb250YWlucyJdLCBjd2Q9cm9vdCkKICAgICAgICAjIC0t
+Y29udGFpbnMgd2FzIGFkZGVkIGluIGdpdC0xLjUuNAogICAgICAgIGlmIHJj
+ICE9IDAgb3IgYnJhbmNoZXMgaXMgTm9uZToKICAgICAgICAgICAgcmFpc2Ug
+Tm90VGhpc01ldGhvZCgiJ2dpdCBicmFuY2ggLS1jb250YWlucycgcmV0dXJu
+ZWQgZXJyb3IiKQogICAgICAgIGJyYW5jaGVzID0gYnJhbmNoZXMuc3BsaXQo
+IlxuIikKCiAgICAgICAgIyBSZW1vdmUgdGhlIGZpcnN0IGxpbmUgaWYgd2Un
+cmUgcnVubmluZyBkZXRhY2hlZAogICAgICAgIGlmICIoIiBpbiBicmFuY2hl
+c1swXToKICAgICAgICAgICAgYnJhbmNoZXMucG9wKDApCgogICAgICAgICMg
+U3RyaXAgb2ZmIHRoZSBsZWFkaW5nICIqICIgZnJvbSB0aGUgbGlzdCBvZiBi
+cmFuY2hlcy4KICAgICAgICBicmFuY2hlcyA9IFticmFuY2hbMjpdIGZvciBi
+cmFuY2ggaW4gYnJhbmNoZXNdCiAgICAgICAgaWYgIm1hc3RlciIgaW4gYnJh
+bmNoZXM6CiAgICAgICAgICAgIGJyYW5jaF9uYW1lID0gIm1hc3RlciIKICAg
+ICAgICBlbGlmIG5vdCBicmFuY2hlczoKICAgICAgICAgICAgYnJhbmNoX25h
+bWUgPSBOb25lCiAgICAgICAgZWxzZToKICAgICAgICAgICAgIyBQaWNrIHRo
+ZSBmaXJzdCBicmFuY2ggdGhhdCBpcyByZXR1cm5lZC4gR29vZCBvciBiYWQu
+CiAgICAgICAgICAgIGJyYW5jaF9uYW1lID0gYnJhbmNoZXNbMF0KCiAgICBw
+aWVjZXNbImJyYW5jaCJdID0gYnJhbmNoX25hbWUKCiAgICAjIHBhcnNlIGRl
+c2NyaWJlX291dC4gSXQgd2lsbCBiZSBsaWtlIFRBRy1OVU0tZ0hFWFstZGly
+dHldIG9yIEhFWFstZGlydHldCiAgICAjIFRBRyBtaWdodCBoYXZlIGh5cGhl
+bnMuCiAgICBnaXRfZGVzY3JpYmUgPSBkZXNjcmliZV9vdXQKCiAgICAjIGxv
+b2sgZm9yIC1kaXJ0eSBzdWZmaXgKICAgIGRpcnR5ID0gZ2l0X2Rlc2NyaWJl
+LmVuZHN3aXRoKCItZGlydHkiKQogICAgcGllY2VzWyJkaXJ0eSJdID0gZGly
+dHkKICAgIGlmIGRpcnR5OgogICAgICAgIGdpdF9kZXNjcmliZSA9IGdpdF9k
+ZXNjcmliZVs6Z2l0X2Rlc2NyaWJlLnJpbmRleCgiLWRpcnR5IildCgogICAg
+IyBub3cgd2UgaGF2ZSBUQUctTlVNLWdIRVggb3IgSEVYCgogICAgaWYgIi0i
+IGluIGdpdF9kZXNjcmliZToKICAgICAgICAjIFRBRy1OVU0tZ0hFWAogICAg
+ICAgIG1vID0gcmUuc2VhcmNoKHInXiguKyktKFxkKyktZyhbMC05YS1mXSsp
+JCcsIGdpdF9kZXNjcmliZSkKICAgICAgICBpZiBub3QgbW86CiAgICAgICAg
+ICAgICMgdW5wYXJzYWJsZS4gTWF5YmUgZ2l0LWRlc2NyaWJlIGlzIG1pc2Jl
+aGF2aW5nPwogICAgICAgICAgICBwaWVjZXNbImVycm9yIl0gPSAoInVuYWJs
+ZSB0byBwYXJzZSBnaXQtZGVzY3JpYmUgb3V0cHV0OiAnJXMnIgogICAgICAg
+ICAgICAgICAgICAgICAgICAgICAgICAgJSBkZXNjcmliZV9vdXQpCiAgICAg
+ICAgICAgIHJldHVybiBwaWVjZXMKCiAgICAgICAgIyB0YWcKICAgICAgICBm
+dWxsX3RhZyA9IG1vLmdyb3VwKDEpCiAgICAgICAgaWYgbm90IGZ1bGxfdGFn
+LnN0YXJ0c3dpdGgodGFnX3ByZWZpeCk6CiAgICAgICAgICAgIGlmIHZlcmJv
+c2U6CiAgICAgICAgICAgICAgICBmbXQgPSAidGFnICclcycgZG9lc24ndCBz
+dGFydCB3aXRoIHByZWZpeCAnJXMnIgogICAgICAgICAgICAgICAgcHJpbnQo
+Zm10ICUgKGZ1bGxfdGFnLCB0YWdfcHJlZml4KSkKICAgICAgICAgICAgcGll
+Y2VzWyJlcnJvciJdID0gKCJ0YWcgJyVzJyBkb2Vzbid0IHN0YXJ0IHdpdGgg
+cHJlZml4ICclcyciCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAl
+IChmdWxsX3RhZywgdGFnX3ByZWZpeCkpCiAgICAgICAgICAgIHJldHVybiBw
+aWVjZXMKICAgICAgICBwaWVjZXNbImNsb3Nlc3QtdGFnIl0gPSBmdWxsX3Rh
+Z1tsZW4odGFnX3ByZWZpeCk6XQoKICAgICAgICAjIGRpc3RhbmNlOiBudW1i
+ZXIgb2YgY29tbWl0cyBzaW5jZSB0YWcKICAgICAgICBwaWVjZXNbImRpc3Rh
+bmNlIl0gPSBpbnQobW8uZ3JvdXAoMikpCgogICAgICAgICMgY29tbWl0OiBz
+aG9ydCBoZXggcmV2aXNpb24gSUQKICAgICAgICBwaWVjZXNbInNob3J0Il0g
+PSBtby5ncm91cCgzKQoKICAgIGVsc2U6CiAgICAgICAgIyBIRVg6IG5vIHRh
+Z3MKICAgICAgICBwaWVjZXNbImNsb3Nlc3QtdGFnIl0gPSBOb25lCiAgICAg
+ICAgb3V0LCByYyA9IHJ1bm5lcihHSVRTLCBbInJldi1saXN0IiwgIkhFQUQi
+LCAiLS1sZWZ0LXJpZ2h0Il0sIGN3ZD1yb290KQogICAgICAgIHBpZWNlc1si
+ZGlzdGFuY2UiXSA9IGxlbihvdXQuc3BsaXQoKSkgICMgdG90YWwgbnVtYmVy
+IG9mIGNvbW1pdHMKCiAgICAjIGNvbW1pdCBkYXRlOiBzZWUgSVNPLTg2MDEg
+Y29tbWVudCBpbiBnaXRfdmVyc2lvbnNfZnJvbV9rZXl3b3JkcygpCiAgICBk
+YXRlID0gcnVubmVyKEdJVFMsIFsic2hvdyIsICItcyIsICItLWZvcm1hdD0l
+Y2kiLCAiSEVBRCJdLCBjd2Q9cm9vdClbMF0uc3RyaXAoKQogICAgIyBVc2Ug
+b25seSB0aGUgbGFzdCBsaW5lLiAgUHJldmlvdXMgbGluZXMgbWF5IGNvbnRh
+aW4gR1BHIHNpZ25hdHVyZQogICAgIyBpbmZvcm1hdGlvbi4KICAgIGRhdGUg
+PSBkYXRlLnNwbGl0bGluZXMoKVstMV0KICAgIHBpZWNlc1siZGF0ZSJdID0g
+ZGF0ZS5zdHJpcCgpLnJlcGxhY2UoIiAiLCAiVCIsIDEpLnJlcGxhY2UoIiAi
+LCAiIiwgMSkKCiAgICByZXR1cm4gcGllY2VzCgoKZGVmIGRvX3Zjc19pbnN0
+YWxsKHZlcnNpb25maWxlX3NvdXJjZTogc3RyLCBpcHk6IE9wdGlvbmFsW3N0
+cl0pIC0+IE5vbmU6CiAgICAiIiJHaXQtc3BlY2lmaWMgaW5zdGFsbGF0aW9u
+IGxvZ2ljIGZvciBWZXJzaW9uZWVyLgoKICAgIEZvciBHaXQsIHRoaXMgbWVh
+bnMgY3JlYXRpbmcvY2hhbmdpbmcgLmdpdGF0dHJpYnV0ZXMgdG8gbWFyayBf
+dmVyc2lvbi5weQogICAgZm9yIGV4cG9ydC1zdWJzdCBrZXl3b3JkIHN1YnN0
+aXR1dGlvbi4KICAgICIiIgogICAgR0lUUyA9IFsiZ2l0Il0KICAgIGlmIHN5
+cy5wbGF0Zm9ybSA9PSAid2luMzIiOgogICAgICAgIEdJVFMgPSBbImdpdC5j
+bWQiLCAiZ2l0LmV4ZSJdCiAgICBmaWxlcyA9IFt2ZXJzaW9uZmlsZV9zb3Vy
+Y2VdCiAgICBpZiBpcHk6CiAgICAgICAgZmlsZXMuYXBwZW5kKGlweSkKICAg
+IGlmICJWRVJTSU9ORUVSX1BFUDUxOCIgbm90IGluIGdsb2JhbHMoKToKICAg
+ICAgICB0cnk6CiAgICAgICAgICAgIG15X3BhdGggPSBfX2ZpbGVfXwogICAg
+ICAgICAgICBpZiBteV9wYXRoLmVuZHN3aXRoKCgiLnB5YyIsICIucHlvIikp
+OgogICAgICAgICAgICAgICAgbXlfcGF0aCA9IG9zLnBhdGguc3BsaXRleHQo
+bXlfcGF0aClbMF0gKyAiLnB5IgogICAgICAgICAgICB2ZXJzaW9uZWVyX2Zp
+bGUgPSBvcy5wYXRoLnJlbHBhdGgobXlfcGF0aCkKICAgICAgICBleGNlcHQg
+TmFtZUVycm9yOgogICAgICAgICAgICB2ZXJzaW9uZWVyX2ZpbGUgPSAidmVy
+c2lvbmVlci5weSIKICAgICAgICBmaWxlcy5hcHBlbmQodmVyc2lvbmVlcl9m
+aWxlKQogICAgcHJlc2VudCA9IEZhbHNlCiAgICB0cnk6CiAgICAgICAgd2l0
+aCBvcGVuKCIuZ2l0YXR0cmlidXRlcyIsICJyIikgYXMgZm9iajoKICAgICAg
+ICAgICAgZm9yIGxpbmUgaW4gZm9iajoKICAgICAgICAgICAgICAgIGlmIGxp
+bmUuc3RyaXAoKS5zdGFydHN3aXRoKHZlcnNpb25maWxlX3NvdXJjZSk6CiAg
+ICAgICAgICAgICAgICAgICAgaWYgImV4cG9ydC1zdWJzdCIgaW4gbGluZS5z
+dHJpcCgpLnNwbGl0KClbMTpdOgogICAgICAgICAgICAgICAgICAgICAgICBw
+cmVzZW50ID0gVHJ1ZQogICAgICAgICAgICAgICAgICAgICAgICBicmVhawog
+ICAgZXhjZXB0IE9TRXJyb3I6CiAgICAgICAgcGFzcwogICAgaWYgbm90IHBy
+ZXNlbnQ6CiAgICAgICAgd2l0aCBvcGVuKCIuZ2l0YXR0cmlidXRlcyIsICJh
+KyIpIGFzIGZvYmo6CiAgICAgICAgICAgIGZvYmoud3JpdGUoZiJ7dmVyc2lv
+bmZpbGVfc291cmNlfSBleHBvcnQtc3Vic3RcbiIpCiAgICAgICAgZmlsZXMu
+YXBwZW5kKCIuZ2l0YXR0cmlidXRlcyIpCiAgICBydW5fY29tbWFuZChHSVRT
+LCBbImFkZCIsICItLSJdICsgZmlsZXMpCgoKZGVmIHZlcnNpb25zX2Zyb21f
+cGFyZW50ZGlyKAogICAgcGFyZW50ZGlyX3ByZWZpeDogc3RyLAogICAgcm9v
+dDogc3RyLAogICAgdmVyYm9zZTogYm9vbCwKKSAtPiBEaWN0W3N0ciwgQW55
+XToKICAgICIiIlRyeSB0byBkZXRlcm1pbmUgdGhlIHZlcnNpb24gZnJvbSB0
+aGUgcGFyZW50IGRpcmVjdG9yeSBuYW1lLgoKICAgIFNvdXJjZSB0YXJiYWxs
+cyBjb252ZW50aW9uYWxseSB1bnBhY2sgaW50byBhIGRpcmVjdG9yeSB0aGF0
+IGluY2x1ZGVzIGJvdGgKICAgIHRoZSBwcm9qZWN0IG5hbWUgYW5kIGEgdmVy
+c2lvbiBzdHJpbmcuIFdlIHdpbGwgYWxzbyBzdXBwb3J0IHNlYXJjaGluZyB1
+cAogICAgdHdvIGRpcmVjdG9yeSBsZXZlbHMgZm9yIGFuIGFwcHJvcHJpYXRl
+bHkgbmFtZWQgcGFyZW50IGRpcmVjdG9yeQogICAgIiIiCiAgICByb290ZGly
+cyA9IFtdCgogICAgZm9yIF8gaW4gcmFuZ2UoMyk6CiAgICAgICAgZGlybmFt
+ZSA9IG9zLnBhdGguYmFzZW5hbWUocm9vdCkKICAgICAgICBpZiBkaXJuYW1l
+LnN0YXJ0c3dpdGgocGFyZW50ZGlyX3ByZWZpeCk6CiAgICAgICAgICAgIHJl
+dHVybiB7InZlcnNpb24iOiBkaXJuYW1lW2xlbihwYXJlbnRkaXJfcHJlZml4
+KTpdLAogICAgICAgICAgICAgICAgICAgICJmdWxsLXJldmlzaW9uaWQiOiBO
+b25lLAogICAgICAgICAgICAgICAgICAgICJkaXJ0eSI6IEZhbHNlLCAiZXJy
+b3IiOiBOb25lLCAiZGF0ZSI6IE5vbmV9CiAgICAgICAgcm9vdGRpcnMuYXBw
+ZW5kKHJvb3QpCiAgICAgICAgcm9vdCA9IG9zLnBhdGguZGlybmFtZShyb290
+KSAgIyB1cCBhIGxldmVsCgogICAgaWYgdmVyYm9zZToKICAgICAgICBwcmlu
+dCgiVHJpZWQgZGlyZWN0b3JpZXMgJXMgYnV0IG5vbmUgc3RhcnRlZCB3aXRo
+IHByZWZpeCAlcyIgJQogICAgICAgICAgICAgIChzdHIocm9vdGRpcnMpLCBw
+YXJlbnRkaXJfcHJlZml4KSkKICAgIHJhaXNlIE5vdFRoaXNNZXRob2QoInJv
+b3RkaXIgZG9lc24ndCBzdGFydCB3aXRoIHBhcmVudGRpcl9wcmVmaXgiKQoK
+ClNIT1JUX1ZFUlNJT05fUFkgPSAiIiIKIyBUaGlzIGZpbGUgd2FzIGdlbmVy
+YXRlZCBieSAndmVyc2lvbmVlci5weScgKDAuMjkrMjcuZ2JkZjcwMWEpIGZy
+b20KIyByZXZpc2lvbi1jb250cm9sIHN5c3RlbSBkYXRhLCBvciBmcm9tIHRo
+ZSBwYXJlbnQgZGlyZWN0b3J5IG5hbWUgb2YgYW4KIyB1bnBhY2tlZCBzb3Vy
+Y2UgYXJjaGl2ZS4gRGlzdHJpYnV0aW9uIHRhcmJhbGxzIGNvbnRhaW4gYSBw
+cmUtZ2VuZXJhdGVkIGNvcHkKIyBvZiB0aGlzIGZpbGUuCgppbXBvcnQganNv
+bgoKdmVyc2lvbl9qc29uID0gJycnCiVzCicnJyAgIyBFTkQgVkVSU0lPTl9K
+U09OCgoKZGVmIGdldF92ZXJzaW9ucygpOgogICAgcmV0dXJuIGpzb24ubG9h
+ZHModmVyc2lvbl9qc29uKQoiIiIKCgpkZWYgdmVyc2lvbnNfZnJvbV9maWxl
+KGZpbGVuYW1lOiBzdHIpIC0+IERpY3Rbc3RyLCBBbnldOgogICAgIiIiVHJ5
+IHRvIGRldGVybWluZSB0aGUgdmVyc2lvbiBmcm9tIF92ZXJzaW9uLnB5IGlm
+IHByZXNlbnQuIiIiCiAgICB0cnk6CiAgICAgICAgd2l0aCBvcGVuKGZpbGVu
+YW1lKSBhcyBmOgogICAgICAgICAgICBjb250ZW50cyA9IGYucmVhZCgpCiAg
+ICBleGNlcHQgT1NFcnJvcjoKICAgICAgICByYWlzZSBOb3RUaGlzTWV0aG9k
+KCJ1bmFibGUgdG8gcmVhZCBfdmVyc2lvbi5weSIpCiAgICBtbyA9IHJlLnNl
+YXJjaChyInZlcnNpb25fanNvbiA9ICcnJ1xuKC4qKScnJyAgIyBFTkQgVkVS
+U0lPTl9KU09OIiwKICAgICAgICAgICAgICAgICAgIGNvbnRlbnRzLCByZS5N
+IHwgcmUuUykKICAgIGlmIG5vdCBtbzoKICAgICAgICBtbyA9IHJlLnNlYXJj
+aChyInZlcnNpb25fanNvbiA9ICcnJ1xyXG4oLiopJycnICAjIEVORCBWRVJT
+SU9OX0pTT04iLAogICAgICAgICAgICAgICAgICAgICAgIGNvbnRlbnRzLCBy
+ZS5NIHwgcmUuUykKICAgIGlmIG5vdCBtbzoKICAgICAgICByYWlzZSBOb3RU
+aGlzTWV0aG9kKCJubyB2ZXJzaW9uX2pzb24gaW4gX3ZlcnNpb24ucHkiKQog
+ICAgcmV0dXJuIGpzb24ubG9hZHMobW8uZ3JvdXAoMSkpCgoKZGVmIHdyaXRl
+X3RvX3ZlcnNpb25fZmlsZShmaWxlbmFtZTogc3RyLCB2ZXJzaW9uczogRGlj
+dFtzdHIsIEFueV0pIC0+IE5vbmU6CiAgICAiIiJXcml0ZSB0aGUgZ2l2ZW4g
+dmVyc2lvbiBudW1iZXIgdG8gdGhlIGdpdmVuIF92ZXJzaW9uLnB5IGZpbGUu
+IiIiCiAgICBjb250ZW50cyA9IGpzb24uZHVtcHModmVyc2lvbnMsIHNvcnRf
+a2V5cz1UcnVlLAogICAgICAgICAgICAgICAgICAgICAgICAgIGluZGVudD0x
+LCBzZXBhcmF0b3JzPSgiLCIsICI6ICIpKQogICAgd2l0aCBvcGVuKGZpbGVu
+YW1lLCAidyIpIGFzIGY6CiAgICAgICAgZi53cml0ZShTSE9SVF9WRVJTSU9O
+X1BZICUgY29udGVudHMpCgogICAgcHJpbnQoInNldCAlcyB0byAnJXMnIiAl
+IChmaWxlbmFtZSwgdmVyc2lvbnNbInZlcnNpb24iXSkpCgoKZGVmIHBsdXNf
+b3JfZG90KHBpZWNlczogRGljdFtzdHIsIEFueV0pIC0+IHN0cjoKICAgICIi
+IlJldHVybiBhICsgaWYgd2UgZG9uJ3QgYWxyZWFkeSBoYXZlIG9uZSwgZWxz
+ZSByZXR1cm4gYSAuIiIiCiAgICBpZiAiKyIgaW4gcGllY2VzLmdldCgiY2xv
+c2VzdC10YWciLCAiIik6CiAgICAgICAgcmV0dXJuICIuIgogICAgcmV0dXJu
+ICIrIgoKCmRlZiByZW5kZXJfcGVwNDQwKHBpZWNlczogRGljdFtzdHIsIEFu
+eV0pIC0+IHN0cjoKICAgICIiIkJ1aWxkIHVwIHZlcnNpb24gc3RyaW5nLCB3
+aXRoIHBvc3QtcmVsZWFzZSAibG9jYWwgdmVyc2lvbiBpZGVudGlmaWVyIi4K
+CiAgICBPdXIgZ29hbDogVEFHWytESVNUQU5DRS5nSEVYWy5kaXJ0eV1dIC4g
+Tm90ZSB0aGF0IGlmIHlvdQogICAgZ2V0IGEgdGFnZ2VkIGJ1aWxkIGFuZCB0
+aGVuIGRpcnR5IGl0LCB5b3UnbGwgZ2V0IFRBRyswLmdIRVguZGlydHkKCiAg
+ICBFeGNlcHRpb25zOgogICAgMTogbm8gdGFncy4gZ2l0X2Rlc2NyaWJlIHdh
+cyBqdXN0IEhFWC4gMCt1bnRhZ2dlZC5ESVNUQU5DRS5nSEVYWy5kaXJ0eV0K
+ICAgICIiIgogICAgaWYgcGllY2VzWyJjbG9zZXN0LXRhZyJdOgogICAgICAg
+IHJlbmRlcmVkID0gcGllY2VzWyJjbG9zZXN0LXRhZyJdCiAgICAgICAgaWYg
+cGllY2VzWyJkaXN0YW5jZSJdIG9yIHBpZWNlc1siZGlydHkiXToKICAgICAg
+ICAgICAgcmVuZGVyZWQgKz0gcGx1c19vcl9kb3QocGllY2VzKQogICAgICAg
+ICAgICByZW5kZXJlZCArPSAiJWQuZyVzIiAlIChwaWVjZXNbImRpc3RhbmNl
+Il0sIHBpZWNlc1sic2hvcnQiXSkKICAgICAgICAgICAgaWYgcGllY2VzWyJk
+aXJ0eSJdOgogICAgICAgICAgICAgICAgcmVuZGVyZWQgKz0gIi5kaXJ0eSIK
+ICAgIGVsc2U6CiAgICAgICAgIyBleGNlcHRpb24gIzEKICAgICAgICByZW5k
+ZXJlZCA9ICIwK3VudGFnZ2VkLiVkLmclcyIgJSAocGllY2VzWyJkaXN0YW5j
+ZSJdLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg
+ICBwaWVjZXNbInNob3J0Il0pCiAgICAgICAgaWYgcGllY2VzWyJkaXJ0eSJd
+OgogICAgICAgICAgICByZW5kZXJlZCArPSAiLmRpcnR5IgogICAgcmV0dXJu
+IHJlbmRlcmVkCgoKZGVmIHJlbmRlcl9wZXA0NDBfYnJhbmNoKHBpZWNlczog
+RGljdFtzdHIsIEFueV0pIC0+IHN0cjoKICAgICIiIlRBR1tbLmRldjBdK0RJ
+U1RBTkNFLmdIRVhbLmRpcnR5XV0gLgoKICAgIFRoZSAiLmRldjAiIG1lYW5z
+IG5vdCBtYXN0ZXIgYnJhbmNoLiBOb3RlIHRoYXQgLmRldjAgc29ydHMgYmFj
+a3dhcmRzCiAgICAoYSBmZWF0dXJlIGJyYW5jaCB3aWxsIGFwcGVhciAib2xk
+ZXIiIHRoYW4gdGhlIG1hc3RlciBicmFuY2gpLgoKICAgIEV4Y2VwdGlvbnM6
+CiAgICAxOiBubyB0YWdzLiAwWy5kZXYwXSt1bnRhZ2dlZC5ESVNUQU5DRS5n
+SEVYWy5kaXJ0eV0KICAgICIiIgogICAgaWYgcGllY2VzWyJjbG9zZXN0LXRh
+ZyJdOgogICAgICAgIHJlbmRlcmVkID0gcGllY2VzWyJjbG9zZXN0LXRhZyJd
+CiAgICAgICAgaWYgcGllY2VzWyJkaXN0YW5jZSJdIG9yIHBpZWNlc1siZGly
+dHkiXToKICAgICAgICAgICAgaWYgcGllY2VzWyJicmFuY2giXSAhPSAibWFz
+dGVyIjoKICAgICAgICAgICAgICAgIHJlbmRlcmVkICs9ICIuZGV2MCIKICAg
+ICAgICAgICAgcmVuZGVyZWQgKz0gcGx1c19vcl9kb3QocGllY2VzKQogICAg
+ICAgICAgICByZW5kZXJlZCArPSAiJWQuZyVzIiAlIChwaWVjZXNbImRpc3Rh
+bmNlIl0sIHBpZWNlc1sic2hvcnQiXSkKICAgICAgICAgICAgaWYgcGllY2Vz
+WyJkaXJ0eSJdOgogICAgICAgICAgICAgICAgcmVuZGVyZWQgKz0gIi5kaXJ0
+eSIKICAgIGVsc2U6CiAgICAgICAgIyBleGNlcHRpb24gIzEKICAgICAgICBy
+ZW5kZXJlZCA9ICIwIgogICAgICAgIGlmIHBpZWNlc1siYnJhbmNoIl0gIT0g
+Im1hc3RlciI6CiAgICAgICAgICAgIHJlbmRlcmVkICs9ICIuZGV2MCIKICAg
+ICAgICByZW5kZXJlZCArPSAiK3VudGFnZ2VkLiVkLmclcyIgJSAocGllY2Vz
+WyJkaXN0YW5jZSJdLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgICAgICBwaWVjZXNbInNob3J0Il0pCiAgICAgICAgaWYgcGllY2Vz
+WyJkaXJ0eSJdOgogICAgICAgICAgICByZW5kZXJlZCArPSAiLmRpcnR5Igog
+ICAgcmV0dXJuIHJlbmRlcmVkCgoKZGVmIHBlcDQ0MF9zcGxpdF9wb3N0KHZl
+cjogc3RyKSAtPiBUdXBsZVtzdHIsIE9wdGlvbmFsW2ludF1dOgogICAgIiIi
+U3BsaXQgcGVwNDQwIHZlcnNpb24gc3RyaW5nIGF0IHRoZSBwb3N0LXJlbGVh
+c2Ugc2VnbWVudC4KCiAgICBSZXR1cm5zIHRoZSByZWxlYXNlIHNlZ21lbnRz
+IGJlZm9yZSB0aGUgcG9zdC1yZWxlYXNlIGFuZCB0aGUKICAgIHBvc3QtcmVs
+ZWFzZSB2ZXJzaW9uIG51bWJlciAob3IgLTEgaWYgbm8gcG9zdC1yZWxlYXNl
+IHNlZ21lbnQgaXMgcHJlc2VudCkuCiAgICAiIiIKICAgIHZjID0gc3RyLnNw
+bGl0KHZlciwgIi5wb3N0IikKICAgIHJldHVybiB2Y1swXSwgaW50KHZjWzFd
+IG9yIDApIGlmIGxlbih2YykgPT0gMiBlbHNlIE5vbmUKCgpkZWYgcmVuZGVy
+X3BlcDQ0MF9wcmUocGllY2VzOiBEaWN0W3N0ciwgQW55XSkgLT4gc3RyOgog
+ICAgIiIiVEFHWy5wb3N0Ti5kZXZESVNUQU5DRV0gLS0gTm8gLWRpcnR5LgoK
+ICAgIEV4Y2VwdGlvbnM6CiAgICAxOiBubyB0YWdzLiAwLnBvc3QwLmRldkRJ
+U1RBTkNFCiAgICAiIiIKICAgIGlmIHBpZWNlc1siY2xvc2VzdC10YWciXToK
+ICAgICAgICBpZiBwaWVjZXNbImRpc3RhbmNlIl06CiAgICAgICAgICAgICMg
+dXBkYXRlIHRoZSBwb3N0IHJlbGVhc2Ugc2VnbWVudAogICAgICAgICAgICB0
+YWdfdmVyc2lvbiwgcG9zdF92ZXJzaW9uID0gcGVwNDQwX3NwbGl0X3Bvc3Qo
+cGllY2VzWyJjbG9zZXN0LXRhZyJdKQogICAgICAgICAgICByZW5kZXJlZCA9
+IHRhZ192ZXJzaW9uCiAgICAgICAgICAgIGlmIHBvc3RfdmVyc2lvbiBpcyBu
+b3QgTm9uZToKICAgICAgICAgICAgICAgIHJlbmRlcmVkICs9ICIucG9zdCVk
+LmRldiVkIiAlIChwb3N0X3ZlcnNpb24gKyAxLCBwaWVjZXNbImRpc3RhbmNl
+Il0pCiAgICAgICAgICAgIGVsc2U6CiAgICAgICAgICAgICAgICByZW5kZXJl
+ZCArPSAiLnBvc3QwLmRldiVkIiAlIChwaWVjZXNbImRpc3RhbmNlIl0pCiAg
+ICAgICAgZWxzZToKICAgICAgICAgICAgIyBubyBjb21taXRzLCB1c2UgdGhl
+IHRhZyBhcyB0aGUgdmVyc2lvbgogICAgICAgICAgICByZW5kZXJlZCA9IHBp
+ZWNlc1siY2xvc2VzdC10YWciXQogICAgZWxzZToKICAgICAgICAjIGV4Y2Vw
+dGlvbiAjMQogICAgICAgIHJlbmRlcmVkID0gIjAucG9zdDAuZGV2JWQiICUg
+cGllY2VzWyJkaXN0YW5jZSJdCiAgICByZXR1cm4gcmVuZGVyZWQKCgpkZWYg
+cmVuZGVyX3BlcDQ0MF9wb3N0KHBpZWNlczogRGljdFtzdHIsIEFueV0pIC0+
+IHN0cjoKICAgICIiIlRBR1sucG9zdERJU1RBTkNFWy5kZXYwXStnSEVYXSAu
+CgogICAgVGhlICIuZGV2MCIgbWVhbnMgZGlydHkuIE5vdGUgdGhhdCAuZGV2
+MCBzb3J0cyBiYWNrd2FyZHMKICAgIChhIGRpcnR5IHRyZWUgd2lsbCBhcHBl
+YXIgIm9sZGVyIiB0aGFuIHRoZSBjb3JyZXNwb25kaW5nIGNsZWFuIG9uZSks
+CiAgICBidXQgeW91IHNob3VsZG4ndCBiZSByZWxlYXNpbmcgc29mdHdhcmUg
+d2l0aCAtZGlydHkgYW55d2F5cy4KCiAgICBFeGNlcHRpb25zOgogICAgMTog
+bm8gdGFncy4gMC5wb3N0RElTVEFOQ0VbLmRldjBdCiAgICAiIiIKICAgIGlm
+IHBpZWNlc1siY2xvc2VzdC10YWciXToKICAgICAgICByZW5kZXJlZCA9IHBp
+ZWNlc1siY2xvc2VzdC10YWciXQogICAgICAgIGlmIHBpZWNlc1siZGlzdGFu
+Y2UiXSBvciBwaWVjZXNbImRpcnR5Il06CiAgICAgICAgICAgIHJlbmRlcmVk
+ICs9ICIucG9zdCVkIiAlIHBpZWNlc1siZGlzdGFuY2UiXQogICAgICAgICAg
+ICBpZiBwaWVjZXNbImRpcnR5Il06CiAgICAgICAgICAgICAgICByZW5kZXJl
+ZCArPSAiLmRldjAiCiAgICAgICAgICAgIHJlbmRlcmVkICs9IHBsdXNfb3Jf
+ZG90KHBpZWNlcykKICAgICAgICAgICAgcmVuZGVyZWQgKz0gImclcyIgJSBw
+aWVjZXNbInNob3J0Il0KICAgIGVsc2U6CiAgICAgICAgIyBleGNlcHRpb24g
+IzEKICAgICAgICByZW5kZXJlZCA9ICIwLnBvc3QlZCIgJSBwaWVjZXNbImRp
+c3RhbmNlIl0KICAgICAgICBpZiBwaWVjZXNbImRpcnR5Il06CiAgICAgICAg
+ICAgIHJlbmRlcmVkICs9ICIuZGV2MCIKICAgICAgICByZW5kZXJlZCArPSAi
+K2clcyIgJSBwaWVjZXNbInNob3J0Il0KICAgIHJldHVybiByZW5kZXJlZAoK
+CmRlZiByZW5kZXJfcGVwNDQwX3Bvc3RfYnJhbmNoKHBpZWNlczogRGljdFtz
+dHIsIEFueV0pIC0+IHN0cjoKICAgICIiIlRBR1sucG9zdERJU1RBTkNFWy5k
+ZXYwXStnSEVYWy5kaXJ0eV1dIC4KCiAgICBUaGUgIi5kZXYwIiBtZWFucyBu
+b3QgbWFzdGVyIGJyYW5jaC4KCiAgICBFeGNlcHRpb25zOgogICAgMTogbm8g
+dGFncy4gMC5wb3N0RElTVEFOQ0VbLmRldjBdK2dIRVhbLmRpcnR5XQogICAg
+IiIiCiAgICBpZiBwaWVjZXNbImNsb3Nlc3QtdGFnIl06CiAgICAgICAgcmVu
+ZGVyZWQgPSBwaWVjZXNbImNsb3Nlc3QtdGFnIl0KICAgICAgICBpZiBwaWVj
+ZXNbImRpc3RhbmNlIl0gb3IgcGllY2VzWyJkaXJ0eSJdOgogICAgICAgICAg
+ICByZW5kZXJlZCArPSAiLnBvc3QlZCIgJSBwaWVjZXNbImRpc3RhbmNlIl0K
+ICAgICAgICAgICAgaWYgcGllY2VzWyJicmFuY2giXSAhPSAibWFzdGVyIjoK
+ICAgICAgICAgICAgICAgIHJlbmRlcmVkICs9ICIuZGV2MCIKICAgICAgICAg
+ICAgcmVuZGVyZWQgKz0gcGx1c19vcl9kb3QocGllY2VzKQogICAgICAgICAg
+ICByZW5kZXJlZCArPSAiZyVzIiAlIHBpZWNlc1sic2hvcnQiXQogICAgICAg
+ICAgICBpZiBwaWVjZXNbImRpcnR5Il06CiAgICAgICAgICAgICAgICByZW5k
+ZXJlZCArPSAiLmRpcnR5IgogICAgZWxzZToKICAgICAgICAjIGV4Y2VwdGlv
+biAjMQogICAgICAgIHJlbmRlcmVkID0gIjAucG9zdCVkIiAlIHBpZWNlc1si
+ZGlzdGFuY2UiXQogICAgICAgIGlmIHBpZWNlc1siYnJhbmNoIl0gIT0gIm1h
+c3RlciI6CiAgICAgICAgICAgIHJlbmRlcmVkICs9ICIuZGV2MCIKICAgICAg
+ICByZW5kZXJlZCArPSAiK2clcyIgJSBwaWVjZXNbInNob3J0Il0KICAgICAg
+ICBpZiBwaWVjZXNbImRpcnR5Il06CiAgICAgICAgICAgIHJlbmRlcmVkICs9
+ICIuZGlydHkiCiAgICByZXR1cm4gcmVuZGVyZWQKCgpkZWYgcmVuZGVyX3Bl
+cDQ0MF9vbGQocGllY2VzOiBEaWN0W3N0ciwgQW55XSkgLT4gc3RyOgogICAg
+IiIiVEFHWy5wb3N0RElTVEFOQ0VbLmRldjBdXSAuCgogICAgVGhlICIuZGV2
+MCIgbWVhbnMgZGlydHkuCgogICAgRXhjZXB0aW9uczoKICAgIDE6IG5vIHRh
+Z3MuIDAucG9zdERJU1RBTkNFWy5kZXYwXQogICAgIiIiCiAgICBpZiBwaWVj
+ZXNbImNsb3Nlc3QtdGFnIl06CiAgICAgICAgcmVuZGVyZWQgPSBwaWVjZXNb
+ImNsb3Nlc3QtdGFnIl0KICAgICAgICBpZiBwaWVjZXNbImRpc3RhbmNlIl0g
+b3IgcGllY2VzWyJkaXJ0eSJdOgogICAgICAgICAgICByZW5kZXJlZCArPSAi
+LnBvc3QlZCIgJSBwaWVjZXNbImRpc3RhbmNlIl0KICAgICAgICAgICAgaWYg
+cGllY2VzWyJkaXJ0eSJdOgogICAgICAgICAgICAgICAgcmVuZGVyZWQgKz0g
+Ii5kZXYwIgogICAgZWxzZToKICAgICAgICAjIGV4Y2VwdGlvbiAjMQogICAg
+ICAgIHJlbmRlcmVkID0gIjAucG9zdCVkIiAlIHBpZWNlc1siZGlzdGFuY2Ui
+XQogICAgICAgIGlmIHBpZWNlc1siZGlydHkiXToKICAgICAgICAgICAgcmVu
+ZGVyZWQgKz0gIi5kZXYwIgogICAgcmV0dXJuIHJlbmRlcmVkCgoKZGVmIHJl
+bmRlcl9naXRfZGVzY3JpYmUocGllY2VzOiBEaWN0W3N0ciwgQW55XSkgLT4g
+c3RyOgogICAgIiIiVEFHWy1ESVNUQU5DRS1nSEVYXVstZGlydHldLgoKICAg
+IExpa2UgJ2dpdCBkZXNjcmliZSAtLXRhZ3MgLS1kaXJ0eSAtLWFsd2F5cycu
+CgogICAgRXhjZXB0aW9uczoKICAgIDE6IG5vIHRhZ3MuIEhFWFstZGlydHld
+ICAobm90ZTogbm8gJ2cnIHByZWZpeCkKICAgICIiIgogICAgaWYgcGllY2Vz
+WyJjbG9zZXN0LXRhZyJdOgogICAgICAgIHJlbmRlcmVkID0gcGllY2VzWyJj
+bG9zZXN0LXRhZyJdCiAgICAgICAgaWYgcGllY2VzWyJkaXN0YW5jZSJdOgog
+ICAgICAgICAgICByZW5kZXJlZCArPSAiLSVkLWclcyIgJSAocGllY2VzWyJk
+aXN0YW5jZSJdLCBwaWVjZXNbInNob3J0Il0pCiAgICBlbHNlOgogICAgICAg
+ICMgZXhjZXB0aW9uICMxCiAgICAgICAgcmVuZGVyZWQgPSBwaWVjZXNbInNo
+b3J0Il0KICAgIGlmIHBpZWNlc1siZGlydHkiXToKICAgICAgICByZW5kZXJl
+ZCArPSAiLWRpcnR5IgogICAgcmV0dXJuIHJlbmRlcmVkCgoKZGVmIHJlbmRl
+cl9naXRfZGVzY3JpYmVfbG9uZyhwaWVjZXM6IERpY3Rbc3RyLCBBbnldKSAt
+PiBzdHI6CiAgICAiIiJUQUctRElTVEFOQ0UtZ0hFWFstZGlydHldLgoKICAg
+IExpa2UgJ2dpdCBkZXNjcmliZSAtLXRhZ3MgLS1kaXJ0eSAtLWFsd2F5cyAt
+bG9uZycuCiAgICBUaGUgZGlzdGFuY2UvaGFzaCBpcyB1bmNvbmRpdGlvbmFs
+LgoKICAgIEV4Y2VwdGlvbnM6CiAgICAxOiBubyB0YWdzLiBIRVhbLWRpcnR5
+XSAgKG5vdGU6IG5vICdnJyBwcmVmaXgpCiAgICAiIiIKICAgIGlmIHBpZWNl
+c1siY2xvc2VzdC10YWciXToKICAgICAgICByZW5kZXJlZCA9IHBpZWNlc1si
+Y2xvc2VzdC10YWciXQogICAgICAgIHJlbmRlcmVkICs9ICItJWQtZyVzIiAl
+IChwaWVjZXNbImRpc3RhbmNlIl0sIHBpZWNlc1sic2hvcnQiXSkKICAgIGVs
+c2U6CiAgICAgICAgIyBleGNlcHRpb24gIzEKICAgICAgICByZW5kZXJlZCA9
+IHBpZWNlc1sic2hvcnQiXQogICAgaWYgcGllY2VzWyJkaXJ0eSJdOgogICAg
+ICAgIHJlbmRlcmVkICs9ICItZGlydHkiCiAgICByZXR1cm4gcmVuZGVyZWQK
+CgpkZWYgcmVuZGVyKHBpZWNlczogRGljdFtzdHIsIEFueV0sIHN0eWxlOiBz
+dHIpIC0+IERpY3Rbc3RyLCBBbnldOgogICAgIiIiUmVuZGVyIHRoZSBnaXZl
+biB2ZXJzaW9uIHBpZWNlcyBpbnRvIHRoZSByZXF1ZXN0ZWQgc3R5bGUuIiIi
+CiAgICBpZiBwaWVjZXNbImVycm9yIl06CiAgICAgICAgcmV0dXJuIHsidmVy
+c2lvbiI6ICJ1bmtub3duIiwKICAgICAgICAgICAgICAgICJmdWxsLXJldmlz
+aW9uaWQiOiBwaWVjZXMuZ2V0KCJsb25nIiksCiAgICAgICAgICAgICAgICAi
+ZGlydHkiOiBOb25lLAogICAgICAgICAgICAgICAgImVycm9yIjogcGllY2Vz
+WyJlcnJvciJdLAogICAgICAgICAgICAgICAgImRhdGUiOiBOb25lfQoKICAg
+IGlmIG5vdCBzdHlsZSBvciBzdHlsZSA9PSAiZGVmYXVsdCI6CiAgICAgICAg
+c3R5bGUgPSAicGVwNDQwIiAgIyB0aGUgZGVmYXVsdAoKICAgIGlmIHN0eWxl
+ID09ICJwZXA0NDAiOgogICAgICAgIHJlbmRlcmVkID0gcmVuZGVyX3BlcDQ0
+MChwaWVjZXMpCiAgICBlbGlmIHN0eWxlID09ICJwZXA0NDAtYnJhbmNoIjoK
+ICAgICAgICByZW5kZXJlZCA9IHJlbmRlcl9wZXA0NDBfYnJhbmNoKHBpZWNl
+cykKICAgIGVsaWYgc3R5bGUgPT0gInBlcDQ0MC1wcmUiOgogICAgICAgIHJl
+bmRlcmVkID0gcmVuZGVyX3BlcDQ0MF9wcmUocGllY2VzKQogICAgZWxpZiBz
+dHlsZSA9PSAicGVwNDQwLXBvc3QiOgogICAgICAgIHJlbmRlcmVkID0gcmVu
+ZGVyX3BlcDQ0MF9wb3N0KHBpZWNlcykKICAgIGVsaWYgc3R5bGUgPT0gInBl
+cDQ0MC1wb3N0LWJyYW5jaCI6CiAgICAgICAgcmVuZGVyZWQgPSByZW5kZXJf
+cGVwNDQwX3Bvc3RfYnJhbmNoKHBpZWNlcykKICAgIGVsaWYgc3R5bGUgPT0g
+InBlcDQ0MC1vbGQiOgogICAgICAgIHJlbmRlcmVkID0gcmVuZGVyX3BlcDQ0
+MF9vbGQocGllY2VzKQogICAgZWxpZiBzdHlsZSA9PSAiZ2l0LWRlc2NyaWJl
+IjoKICAgICAgICByZW5kZXJlZCA9IHJlbmRlcl9naXRfZGVzY3JpYmUocGll
+Y2VzKQogICAgZWxpZiBzdHlsZSA9PSAiZ2l0LWRlc2NyaWJlLWxvbmciOgog
+ICAgICAgIHJlbmRlcmVkID0gcmVuZGVyX2dpdF9kZXNjcmliZV9sb25nKHBp
+ZWNlcykKICAgIGVsc2U6CiAgICAgICAgcmFpc2UgVmFsdWVFcnJvcigidW5r
+bm93biBzdHlsZSAnJXMnIiAlIHN0eWxlKQoKICAgIHJldHVybiB7InZlcnNp
+b24iOiByZW5kZXJlZCwgImZ1bGwtcmV2aXNpb25pZCI6IHBpZWNlc1sibG9u
+ZyJdLAogICAgICAgICAgICAiZGlydHkiOiBwaWVjZXNbImRpcnR5Il0sICJl
+cnJvciI6IE5vbmUsCiAgICAgICAgICAgICJkYXRlIjogcGllY2VzLmdldCgi
+ZGF0ZSIpfQoKCmNsYXNzIFZlcnNpb25lZXJCYWRSb290RXJyb3IoRXhjZXB0
+aW9uKToKICAgICIiIlRoZSBwcm9qZWN0IHJvb3QgZGlyZWN0b3J5IGlzIHVu
+a25vd24gb3IgbWlzc2luZyBrZXkgZmlsZXMuIiIiCgoKZGVmIGdldF92ZXJz
+aW9ucyh2ZXJib3NlOiBib29sID0gRmFsc2UpIC0+IERpY3Rbc3RyLCBBbnld
+OgogICAgIiIiR2V0IHRoZSBwcm9qZWN0IHZlcnNpb24gZnJvbSB3aGF0ZXZl
+ciBzb3VyY2UgaXMgYXZhaWxhYmxlLgoKICAgIFJldHVybnMgZGljdCB3aXRo
+IHR3byBrZXlzOiAndmVyc2lvbicgYW5kICdmdWxsJy4KICAgICIiIgogICAg
+aWYgInZlcnNpb25lZXIiIGluIHN5cy5tb2R1bGVzOgogICAgICAgICMgc2Vl
+IHRoZSBkaXNjdXNzaW9uIGluIGNtZGNsYXNzLnB5OmdldF9jbWRjbGFzcygp
+CiAgICAgICAgZGVsIHN5cy5tb2R1bGVzWyJ2ZXJzaW9uZWVyIl0KCiAgICBy
+b290ID0gZ2V0X3Jvb3QoKQogICAgY2ZnID0gZ2V0X2NvbmZpZ19mcm9tX3Jv
+b3Qocm9vdCkKCiAgICBhc3NlcnQgY2ZnLlZDUyBpcyBub3QgTm9uZSwgInBs
+ZWFzZSBzZXQgW3ZlcnNpb25lZXJdVkNTPSBpbiBzZXR1cC5jZmciCiAgICBo
+YW5kbGVycyA9IEhBTkRMRVJTLmdldChjZmcuVkNTKQogICAgYXNzZXJ0IGhh
+bmRsZXJzLCAidW5yZWNvZ25pemVkIFZDUyAnJXMnIiAlIGNmZy5WQ1MKICAg
+IHZlcmJvc2UgPSB2ZXJib3NlIG9yIGJvb2woY2ZnLnZlcmJvc2UpICAjIGBi
+b29sKClgIHVzZWQgdG8gYXZvaWQgYE5vbmVgCiAgICBhc3NlcnQgY2ZnLnZl
+cnNpb25maWxlX3NvdXJjZSBpcyBub3QgTm9uZSwgXAogICAgICAgICJwbGVh
+c2Ugc2V0IHZlcnNpb25lZXIudmVyc2lvbmZpbGVfc291cmNlIgogICAgYXNz
+ZXJ0IGNmZy50YWdfcHJlZml4IGlzIG5vdCBOb25lLCAicGxlYXNlIHNldCB2
+ZXJzaW9uZWVyLnRhZ19wcmVmaXgiCgogICAgdmVyc2lvbmZpbGVfYWJzID0g
+b3MucGF0aC5qb2luKHJvb3QsIGNmZy52ZXJzaW9uZmlsZV9zb3VyY2UpCgog
+ICAgIyBleHRyYWN0IHZlcnNpb24gZnJvbSBmaXJzdCBvZjogX3ZlcnNpb24u
+cHksIFZDUyBjb21tYW5kIChlLmcuICdnaXQKICAgICMgZGVzY3JpYmUnKSwg
+cGFyZW50ZGlyLiBUaGlzIGlzIG1lYW50IHRvIHdvcmsgZm9yIGRldmVsb3Bl
+cnMgdXNpbmcgYQogICAgIyBzb3VyY2UgY2hlY2tvdXQsIGZvciB1c2VycyBv
+ZiBhIHRhcmJhbGwgY3JlYXRlZCBieSAnc2V0dXAucHkgc2Rpc3QnLAogICAg
+IyBhbmQgZm9yIHVzZXJzIG9mIGEgdGFyYmFsbC96aXBiYWxsIGNyZWF0ZWQg
+YnkgJ2dpdCBhcmNoaXZlJyBvciBnaXRodWIncwogICAgIyBkb3dubG9hZC1m
+cm9tLXRhZyBmZWF0dXJlIG9yIHRoZSBlcXVpdmFsZW50IGluIG90aGVyIFZD
+U2VzLgoKICAgIGdldF9rZXl3b3Jkc19mID0gaGFuZGxlcnMuZ2V0KCJnZXRf
+a2V5d29yZHMiKQogICAgZnJvbV9rZXl3b3Jkc19mID0gaGFuZGxlcnMuZ2V0
+KCJrZXl3b3JkcyIpCiAgICBpZiBnZXRfa2V5d29yZHNfZiBhbmQgZnJvbV9r
+ZXl3b3Jkc19mOgogICAgICAgIHRyeToKICAgICAgICAgICAga2V5d29yZHMg
+PSBnZXRfa2V5d29yZHNfZih2ZXJzaW9uZmlsZV9hYnMpCiAgICAgICAgICAg
+IHZlciA9IGZyb21fa2V5d29yZHNfZihrZXl3b3JkcywgY2ZnLnRhZ19wcmVm
+aXgsIHZlcmJvc2UpCiAgICAgICAgICAgIGlmIHZlcmJvc2U6CiAgICAgICAg
+ICAgICAgICBwcmludCgiZ290IHZlcnNpb24gZnJvbSBleHBhbmRlZCBrZXl3
+b3JkICVzIiAlIHZlcikKICAgICAgICAgICAgcmV0dXJuIHZlcgogICAgICAg
+IGV4Y2VwdCBOb3RUaGlzTWV0aG9kOgogICAgICAgICAgICBwYXNzCgogICAg
+dHJ5OgogICAgICAgIHZlciA9IHZlcnNpb25zX2Zyb21fZmlsZSh2ZXJzaW9u
+ZmlsZV9hYnMpCiAgICAgICAgaWYgdmVyYm9zZToKICAgICAgICAgICAgcHJp
+bnQoImdvdCB2ZXJzaW9uIGZyb20gZmlsZSAlcyAlcyIgJSAodmVyc2lvbmZp
+bGVfYWJzLCB2ZXIpKQogICAgICAgIHJldHVybiB2ZXIKICAgIGV4Y2VwdCBO
+b3RUaGlzTWV0aG9kOgogICAgICAgIHBhc3MKCiAgICBmcm9tX3Zjc19mID0g
+aGFuZGxlcnMuZ2V0KCJwaWVjZXNfZnJvbV92Y3MiKQogICAgaWYgZnJvbV92
+Y3NfZjoKICAgICAgICB0cnk6CiAgICAgICAgICAgIHBpZWNlcyA9IGZyb21f
+dmNzX2YoY2ZnLnRhZ19wcmVmaXgsIHJvb3QsIHZlcmJvc2UpCiAgICAgICAg
+ICAgIHZlciA9IHJlbmRlcihwaWVjZXMsIGNmZy5zdHlsZSkKICAgICAgICAg
+ICAgaWYgdmVyYm9zZToKICAgICAgICAgICAgICAgIHByaW50KCJnb3QgdmVy
+c2lvbiBmcm9tIFZDUyAlcyIgJSB2ZXIpCiAgICAgICAgICAgIHJldHVybiB2
+ZXIKICAgICAgICBleGNlcHQgTm90VGhpc01ldGhvZDoKICAgICAgICAgICAg
+cGFzcwoKICAgIHRyeToKICAgICAgICBpZiBjZmcucGFyZW50ZGlyX3ByZWZp
+eDoKICAgICAgICAgICAgdmVyID0gdmVyc2lvbnNfZnJvbV9wYXJlbnRkaXIo
+Y2ZnLnBhcmVudGRpcl9wcmVmaXgsIHJvb3QsIHZlcmJvc2UpCiAgICAgICAg
+ICAgIGlmIHZlcmJvc2U6CiAgICAgICAgICAgICAgICBwcmludCgiZ290IHZl
+cnNpb24gZnJvbSBwYXJlbnRkaXIgJXMiICUgdmVyKQogICAgICAgICAgICBy
+ZXR1cm4gdmVyCiAgICBleGNlcHQgTm90VGhpc01ldGhvZDoKICAgICAgICBw
+YXNzCgogICAgaWYgdmVyYm9zZToKICAgICAgICBwcmludCgidW5hYmxlIHRv
+IGNvbXB1dGUgdmVyc2lvbiIpCgogICAgcmV0dXJuIHsidmVyc2lvbiI6ICIw
+K3Vua25vd24iLCAiZnVsbC1yZXZpc2lvbmlkIjogTm9uZSwKICAgICAgICAg
+ICAgImRpcnR5IjogTm9uZSwgImVycm9yIjogInVuYWJsZSB0byBjb21wdXRl
+IHZlcnNpb24iLAogICAgICAgICAgICAiZGF0ZSI6IE5vbmV9CgoKZGVmIGdl
+dF92ZXJzaW9uKCkgLT4gc3RyOgogICAgIiIiR2V0IHRoZSBzaG9ydCB2ZXJz
+aW9uIHN0cmluZyBmb3IgdGhpcyBwcm9qZWN0LiIiIgogICAgcmV0dXJuIGdl
+dF92ZXJzaW9ucygpWyJ2ZXJzaW9uIl0KCgpkZWYgZ2V0X2NtZGNsYXNzKGNt
+ZGNsYXNzOiBPcHRpb25hbFtEaWN0W3N0ciwgQW55XV0gPSBOb25lKToKICAg
+ICIiIkdldCB0aGUgY3VzdG9tIHNldHVwdG9vbHMgc3ViY2xhc3NlcyB1c2Vk
+IGJ5IFZlcnNpb25lZXIuCgogICAgSWYgdGhlIHBhY2thZ2UgdXNlcyBhIGRp
+ZmZlcmVudCBjbWRjbGFzcyAoZS5nLiBvbmUgZnJvbSBudW1weSksIGl0CiAg
+ICBzaG91bGQgYmUgcHJvdmlkZSBhcyBhbiBhcmd1bWVudC4KICAgICIiIgog
+ICAgaWYgInZlcnNpb25lZXIiIGluIHN5cy5tb2R1bGVzOgogICAgICAgIGRl
+bCBzeXMubW9kdWxlc1sidmVyc2lvbmVlciJdCiAgICAgICAgIyB0aGlzIGZp
+eGVzIHRoZSAicHl0aG9uIHNldHVwLnB5IGRldmVsb3AiIGNhc2UgKGFsc28g
+J2luc3RhbGwnIGFuZAogICAgICAgICMgJ2Vhc3lfaW5zdGFsbCAuJyksIGlu
+IHdoaWNoIHN1YmRlcGVuZGVuY2llcyBvZiB0aGUgbWFpbiBwcm9qZWN0IGFy
+ZQogICAgICAgICMgYnVpbHQgKHVzaW5nIHNldHVwLnB5IGJkaXN0X2VnZykg
+aW4gdGhlIHNhbWUgcHl0aG9uIHByb2Nlc3MuIEFzc3VtZQogICAgICAgICMg
+YSBtYWluIHByb2plY3QgQSBhbmQgYSBkZXBlbmRlbmN5IEIsIHdoaWNoIHVz
+ZSBkaWZmZXJlbnQgdmVyc2lvbnMKICAgICAgICAjIG9mIFZlcnNpb25lZXIu
+IEEncyBzZXR1cC5weSBpbXBvcnRzIEEncyBWZXJzaW9uZWVyLCBsZWF2aW5n
+IGl0IGluCiAgICAgICAgIyBzeXMubW9kdWxlcyBieSB0aGUgdGltZSBCJ3Mg
+c2V0dXAucHkgaXMgZXhlY3V0ZWQsIGNhdXNpbmcgQiB0byBydW4KICAgICAg
+ICAjIHdpdGggdGhlIHdyb25nIHZlcnNpb25lZXIuIFNldHVwdG9vbHMgd3Jh
+cHMgdGhlIHN1Yi1kZXAgYnVpbGRzIGluIGEKICAgICAgICAjIHNhbmRib3gg
+dGhhdCByZXN0b3JlcyBzeXMubW9kdWxlcyB0byBpdCdzIHByZS1idWlsZCBz
+dGF0ZSwgc28gdGhlCiAgICAgICAgIyBwYXJlbnQgaXMgcHJvdGVjdGVkIGFn
+YWluc3QgdGhlIGNoaWxkJ3MgImltcG9ydCB2ZXJzaW9uZWVyIi4gQnkKICAg
+ICAgICAjIHJlbW92aW5nIG91cnNlbHZlcyBmcm9tIHN5cy5tb2R1bGVzIGhl
+cmUsIGJlZm9yZSB0aGUgY2hpbGQgYnVpbGQKICAgICAgICAjIGhhcHBlbnMs
+IHdlIHByb3RlY3QgdGhlIGNoaWxkIGZyb20gdGhlIHBhcmVudCdzIHZlcnNp
+b25lZXIgdG9vLgogICAgICAgICMgQWxzbyBzZWUgaHR0cHM6Ly9naXRodWIu
+Y29tL3B5dGhvbi12ZXJzaW9uZWVyL3B5dGhvbi12ZXJzaW9uZWVyL2lzc3Vl
+cy81MgoKICAgIGNtZHMgPSB7fSBpZiBjbWRjbGFzcyBpcyBOb25lIGVsc2Ug
+Y21kY2xhc3MuY29weSgpCgogICAgIyB3ZSBhZGQgInZlcnNpb24iIHRvIHNl
+dHVwdG9vbHMKICAgIGZyb20gc2V0dXB0b29scyBpbXBvcnQgQ29tbWFuZAoK
+ICAgIGNsYXNzIGNtZF92ZXJzaW9uKENvbW1hbmQpOgogICAgICAgIGRlc2Ny
+aXB0aW9uID0gInJlcG9ydCBnZW5lcmF0ZWQgdmVyc2lvbiBzdHJpbmciCiAg
+ICAgICAgdXNlcl9vcHRpb25zOiBMaXN0W1R1cGxlW3N0ciwgc3RyLCBzdHJd
+XSA9IFtdCiAgICAgICAgYm9vbGVhbl9vcHRpb25zOiBMaXN0W3N0cl0gPSBb
+XQoKICAgICAgICBkZWYgaW5pdGlhbGl6ZV9vcHRpb25zKHNlbGYpIC0+IE5v
+bmU6CiAgICAgICAgICAgIHBhc3MKCiAgICAgICAgZGVmIGZpbmFsaXplX29w
+dGlvbnMoc2VsZikgLT4gTm9uZToKICAgICAgICAgICAgcGFzcwoKICAgICAg
+ICBkZWYgcnVuKHNlbGYpIC0+IE5vbmU6CiAgICAgICAgICAgIHZlcnMgPSBn
+ZXRfdmVyc2lvbnModmVyYm9zZT1UcnVlKQogICAgICAgICAgICBwcmludCgi
+VmVyc2lvbjogJXMiICUgdmVyc1sidmVyc2lvbiJdKQogICAgICAgICAgICBw
+cmludCgiIGZ1bGwtcmV2aXNpb25pZDogJXMiICUgdmVycy5nZXQoImZ1bGwt
+cmV2aXNpb25pZCIpKQogICAgICAgICAgICBwcmludCgiIGRpcnR5OiAlcyIg
+JSB2ZXJzLmdldCgiZGlydHkiKSkKICAgICAgICAgICAgcHJpbnQoIiBkYXRl
+OiAlcyIgJSB2ZXJzLmdldCgiZGF0ZSIpKQogICAgICAgICAgICBpZiB2ZXJz
+WyJlcnJvciJdOgogICAgICAgICAgICAgICAgcHJpbnQoIiBlcnJvcjogJXMi
+ICUgdmVyc1siZXJyb3IiXSkKICAgIGNtZHNbInZlcnNpb24iXSA9IGNtZF92
+ZXJzaW9uCgogICAgIyB3ZSBvdmVycmlkZSAiYnVpbGRfcHkiIGluIHNldHVw
+dG9vbHMKICAgICMKICAgICMgbW9zdCBpbnZvY2F0aW9uIHBhdGh3YXlzIGVu
+ZCB1cCBydW5uaW5nIGJ1aWxkX3B5OgogICAgIyAgZGlzdHV0aWxzL2J1aWxk
+IC0+IGJ1aWxkX3B5CiAgICAjICBkaXN0dXRpbHMvaW5zdGFsbCAtPiBkaXN0
+dXRpbHMvYnVpbGQgLT4uLgogICAgIyAgc2V0dXB0b29scy9iZGlzdF93aGVl
+bCAtPiBkaXN0dXRpbHMvaW5zdGFsbCAtPi4uCiAgICAjICBzZXR1cHRvb2xz
+L2JkaXN0X2VnZyAtPiBkaXN0dXRpbHMvaW5zdGFsbF9saWIgLT4gYnVpbGRf
+cHkKICAgICMgIHNldHVwdG9vbHMvaW5zdGFsbCAtPiBiZGlzdF9lZ2cgLT4u
+LgogICAgIyAgc2V0dXB0b29scy9kZXZlbG9wIC0+ID8KICAgICMgIHBpcCBp
+bnN0YWxsOgogICAgIyAgIGNvcGllcyBzb3VyY2UgdHJlZSB0byBhIHRlbXBk
+aXIgYmVmb3JlIHJ1bm5pbmcgZWdnX2luZm8vZXRjCiAgICAjICAgaWYgLmdp
+dCBpc24ndCBjb3BpZWQgdG9vLCAnZ2l0IGRlc2NyaWJlJyB3aWxsIGZhaWwK
+ICAgICMgICB0aGVuIGRvZXMgc2V0dXAucHkgYmRpc3Rfd2hlZWwsIG9yIHNv
+bWV0aW1lcyBzZXR1cC5weSBpbnN0YWxsCiAgICAjICBzZXR1cC5weSBlZ2df
+aW5mbyAtPiA/CgogICAgIyBwaXAgaW5zdGFsbCAtZSAuIGFuZCBzZXR1cHRv
+b2wvZWRpdGFibGVfd2hlZWwgd2lsbCBpbnZva2UgYnVpbGRfcHkKICAgICMg
+YnV0IHRoZSBidWlsZF9weSBjb21tYW5kIGlzIG5vdCBleHBlY3RlZCB0byBj
+b3B5IGFueSBmaWxlcy4KCiAgICAjIHdlIG92ZXJyaWRlIGRpZmZlcmVudCAi
+YnVpbGRfcHkiIGNvbW1hbmRzIGZvciBib3RoIGVudmlyb25tZW50cwogICAg
+aWYgJ2J1aWxkX3B5JyBpbiBjbWRzOgogICAgICAgIF9idWlsZF9weTogQW55
+ID0gY21kc1snYnVpbGRfcHknXQogICAgZWxzZToKICAgICAgICBmcm9tIHNl
+dHVwdG9vbHMuY29tbWFuZC5idWlsZF9weSBpbXBvcnQgYnVpbGRfcHkgYXMg
+X2J1aWxkX3B5CgogICAgY2xhc3MgY21kX2J1aWxkX3B5KF9idWlsZF9weSk6
+CiAgICAgICAgZGVmIHJ1bihzZWxmKSAtPiBOb25lOgogICAgICAgICAgICBy
+b290ID0gZ2V0X3Jvb3QoKQogICAgICAgICAgICBjZmcgPSBnZXRfY29uZmln
+X2Zyb21fcm9vdChyb290KQogICAgICAgICAgICB2ZXJzaW9ucyA9IGdldF92
+ZXJzaW9ucygpCiAgICAgICAgICAgIF9idWlsZF9weS5ydW4oc2VsZikKICAg
+ICAgICAgICAgaWYgZ2V0YXR0cihzZWxmLCAiZWRpdGFibGVfbW9kZSIsIEZh
+bHNlKToKICAgICAgICAgICAgICAgICMgRHVyaW5nIGVkaXRhYmxlIGluc3Rh
+bGxzIGAucHlgIGFuZCBkYXRhIGZpbGVzIGFyZQogICAgICAgICAgICAgICAg
+IyBub3QgY29waWVkIHRvIGJ1aWxkX2xpYgogICAgICAgICAgICAgICAgcmV0
+dXJuCiAgICAgICAgICAgICMgbm93IGxvY2F0ZSBfdmVyc2lvbi5weSBpbiB0
+aGUgbmV3IGJ1aWxkLyBkaXJlY3RvcnkgYW5kIHJlcGxhY2UKICAgICAgICAg
+ICAgIyBpdCB3aXRoIGFuIHVwZGF0ZWQgdmFsdWUKICAgICAgICAgICAgaWYg
+Y2ZnLnZlcnNpb25maWxlX2J1aWxkOgogICAgICAgICAgICAgICAgdGFyZ2V0
+X3ZlcnNpb25maWxlID0gb3MucGF0aC5qb2luKHNlbGYuYnVpbGRfbGliLAog
+ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgIGNmZy52ZXJzaW9uZmlsZV9idWlsZCkKICAgICAgICAgICAgICAgIHBy
+aW50KCJVUERBVElORyAlcyIgJSB0YXJnZXRfdmVyc2lvbmZpbGUpCiAgICAg
+ICAgICAgICAgICB3cml0ZV90b192ZXJzaW9uX2ZpbGUodGFyZ2V0X3ZlcnNp
+b25maWxlLCB2ZXJzaW9ucykKICAgIGNtZHNbImJ1aWxkX3B5Il0gPSBjbWRf
+YnVpbGRfcHkKCiAgICBpZiAnYnVpbGRfZXh0JyBpbiBjbWRzOgogICAgICAg
+IF9idWlsZF9leHQ6IEFueSA9IGNtZHNbJ2J1aWxkX2V4dCddCiAgICBlbHNl
+OgogICAgICAgIGZyb20gc2V0dXB0b29scy5jb21tYW5kLmJ1aWxkX2V4dCBp
+bXBvcnQgYnVpbGRfZXh0IGFzIF9idWlsZF9leHQKCiAgICBjbGFzcyBjbWRf
+YnVpbGRfZXh0KF9idWlsZF9leHQpOgogICAgICAgIGRlZiBydW4oc2VsZikg
+LT4gTm9uZToKICAgICAgICAgICAgcm9vdCA9IGdldF9yb290KCkKICAgICAg
+ICAgICAgY2ZnID0gZ2V0X2NvbmZpZ19mcm9tX3Jvb3Qocm9vdCkKICAgICAg
+ICAgICAgdmVyc2lvbnMgPSBnZXRfdmVyc2lvbnMoKQogICAgICAgICAgICBf
+YnVpbGRfZXh0LnJ1bihzZWxmKQogICAgICAgICAgICBpZiBzZWxmLmlucGxh
+Y2U6CiAgICAgICAgICAgICAgICAjIGJ1aWxkX2V4dCAtLWlucGxhY2Ugd2ls
+bCBvbmx5IGJ1aWxkIGV4dGVuc2lvbnMgaW4KICAgICAgICAgICAgICAgICMg
+YnVpbGQvbGliPC4uPiBkaXIgd2l0aCBubyBfdmVyc2lvbi5weSB0byB3cml0
+ZSB0by4KICAgICAgICAgICAgICAgICMgQXMgaW4gcGxhY2UgYnVpbGRzIHdp
+bGwgYWxyZWFkeSBoYXZlIGEgX3ZlcnNpb24ucHkKICAgICAgICAgICAgICAg
+ICMgaW4gdGhlIG1vZHVsZSBkaXIsIHdlIGRvIG5vdCBuZWVkIHRvIHdyaXRl
+IG9uZS4KICAgICAgICAgICAgICAgIHJldHVybgogICAgICAgICAgICAjIG5v
+dyBsb2NhdGUgX3ZlcnNpb24ucHkgaW4gdGhlIG5ldyBidWlsZC8gZGlyZWN0
+b3J5IGFuZCByZXBsYWNlCiAgICAgICAgICAgICMgaXQgd2l0aCBhbiB1cGRh
+dGVkIHZhbHVlCiAgICAgICAgICAgIGlmIG5vdCBjZmcudmVyc2lvbmZpbGVf
+YnVpbGQ6CiAgICAgICAgICAgICAgICByZXR1cm4KICAgICAgICAgICAgdGFy
+Z2V0X3ZlcnNpb25maWxlID0gb3MucGF0aC5qb2luKHNlbGYuYnVpbGRfbGli
+LAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgY2ZnLnZlcnNpb25maWxlX2J1aWxkKQogICAgICAgICAgICBpZiBub3Qg
+b3MucGF0aC5leGlzdHModGFyZ2V0X3ZlcnNpb25maWxlKToKICAgICAgICAg
+ICAgICAgIHByaW50KGYiV2FybmluZzoge3RhcmdldF92ZXJzaW9uZmlsZX0g
+ZG9lcyBub3QgZXhpc3QsIHNraXBwaW5nICIKICAgICAgICAgICAgICAgICAg
+ICAgICJ2ZXJzaW9uIHVwZGF0ZS4gVGhpcyBjYW4gaGFwcGVuIGlmIHlvdSBh
+cmUgcnVubmluZyBidWlsZF9leHQgIgogICAgICAgICAgICAgICAgICAgICAg
+IndpdGhvdXQgZmlyc3QgcnVubmluZyBidWlsZF9weS4iKQogICAgICAgICAg
+ICAgICAgcmV0dXJuCiAgICAgICAgICAgIHByaW50KCJVUERBVElORyAlcyIg
+JSB0YXJnZXRfdmVyc2lvbmZpbGUpCiAgICAgICAgICAgIHdyaXRlX3RvX3Zl
+cnNpb25fZmlsZSh0YXJnZXRfdmVyc2lvbmZpbGUsIHZlcnNpb25zKQogICAg
+Y21kc1siYnVpbGRfZXh0Il0gPSBjbWRfYnVpbGRfZXh0CgogICAgaWYgImN4
+X0ZyZWV6ZSIgaW4gc3lzLm1vZHVsZXM6ICAjIGN4X2ZyZWV6ZSBlbmFibGVk
+PwogICAgICAgIHRyeToKICAgICAgICAgICAgZnJvbSBjeF9GcmVlemUuY29t
+bWFuZC5idWlsZF9leGUgaW1wb3J0ICggICMgdHlwZTogaWdub3JlCiAgICAg
+ICAgICAgICAgICBCdWlsZEVYRSBhcyBfYnVpbGRfZXhlCiAgICAgICAgICAg
+ICkKICAgICAgICBleGNlcHQgSW1wb3J0RXJyb3I6ICAjIGN4X0ZyZWV6ZSA8
+IDYuMTEKICAgICAgICAgICAgZnJvbSBjeF9GcmVlemUuZGlzdCBpbXBvcnQg
+YnVpbGRfZXhlIGFzIF9idWlsZF9leGUgICMgdHlwZTogaWdub3JlCiAgICAg
+ICAgIyBuY3plY3p1bGluIHJlcG9ydHMgdGhhdCBweTJleGUgd29uJ3QgbGlr
+ZSB0aGUgcGVwNDQwLXN0eWxlIHN0cmluZwogICAgICAgICMgYXMgRklMRVZF
+UlNJT04sIGJ1dCBpdCBjYW4gYmUgdXNlZCBmb3IgUFJPRFVDVFZFUlNJT04s
+IGUuZy4KICAgICAgICAjIHNldHVwKGNvbnNvbGU9W3sKICAgICAgICAjICAg
+InZlcnNpb24iOiB2ZXJzaW9uZWVyLmdldF92ZXJzaW9uKCkuc3BsaXQoIisi
+LCAxKVswXSwgIyBGSUxFVkVSU0lPTgogICAgICAgICMgICAicHJvZHVjdF92
+ZXJzaW9uIjogdmVyc2lvbmVlci5nZXRfdmVyc2lvbigpLAogICAgICAgICMg
+ICAuLi4KCiAgICAgICAgY2xhc3MgY21kX2J1aWxkX2V4ZShfYnVpbGRfZXhl
+KToKICAgICAgICAgICAgZGVmIHJ1bihzZWxmKSAtPiBOb25lOgogICAgICAg
+ICAgICAgICAgcm9vdCA9IGdldF9yb290KCkKICAgICAgICAgICAgICAgIGNm
+ZyA9IGdldF9jb25maWdfZnJvbV9yb290KHJvb3QpCiAgICAgICAgICAgICAg
+ICB2ZXJzaW9ucyA9IGdldF92ZXJzaW9ucygpCiAgICAgICAgICAgICAgICB0
+YXJnZXRfdmVyc2lvbmZpbGUgPSBjZmcudmVyc2lvbmZpbGVfc291cmNlCiAg
+ICAgICAgICAgICAgICBwcmludCgiVVBEQVRJTkcgJXMiICUgdGFyZ2V0X3Zl
+cnNpb25maWxlKQogICAgICAgICAgICAgICAgd3JpdGVfdG9fdmVyc2lvbl9m
+aWxlKHRhcmdldF92ZXJzaW9uZmlsZSwgdmVyc2lvbnMpCgogICAgICAgICAg
+ICAgICAgX2J1aWxkX2V4ZS5ydW4oc2VsZikKICAgICAgICAgICAgICAgIG9z
+LnVubGluayh0YXJnZXRfdmVyc2lvbmZpbGUpCiAgICAgICAgICAgICAgICB3
+aXRoIG9wZW4oY2ZnLnZlcnNpb25maWxlX3NvdXJjZSwgInciKSBhcyBmOgog
+ICAgICAgICAgICAgICAgICAgIExPTkcgPSBMT05HX1ZFUlNJT05fUFlbY2Zn
+LlZDU10KICAgICAgICAgICAgICAgICAgICBmLndyaXRlKExPTkcgJQogICAg
+ICAgICAgICAgICAgICAgICAgICAgICAgeyJET0xMQVIiOiAiJCIsCiAgICAg
+ICAgICAgICAgICAgICAgICAgICAgICAgIlNUWUxFIjogY2ZnLnN0eWxlLAog
+ICAgICAgICAgICAgICAgICAgICAgICAgICAgICJUQUdfUFJFRklYIjogY2Zn
+LnRhZ19wcmVmaXgsCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIlBB
+UkVOVERJUl9QUkVGSVgiOiBjZmcucGFyZW50ZGlyX3ByZWZpeCwKICAgICAg
+ICAgICAgICAgICAgICAgICAgICAgICAiVkVSU0lPTkZJTEVfU09VUkNFIjog
+Y2ZnLnZlcnNpb25maWxlX3NvdXJjZSwKICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgICB9KQogICAgICAgIGNtZHNbImJ1aWxkX2V4ZSJdID0gY21kX2J1
+aWxkX2V4ZQogICAgICAgIGRlbCBjbWRzWyJidWlsZF9weSJdCgogICAgaWYg
+J3B5MmV4ZScgaW4gc3lzLm1vZHVsZXM6ICAjIHB5MmV4ZSBlbmFibGVkPwog
+ICAgICAgIHRyeToKICAgICAgICAgICAgZnJvbSBweTJleGUuc2V0dXB0b29s
+c19idWlsZGV4ZSBpbXBvcnQgcHkyZXhlIGFzIF9weTJleGUgICMgdHlwZTog
+aWdub3JlCiAgICAgICAgZXhjZXB0IEltcG9ydEVycm9yOgogICAgICAgICAg
+ICBmcm9tIHB5MmV4ZS5kaXN0dXRpbHNfYnVpbGRleGUgaW1wb3J0IHB5MmV4
+ZSBhcyBfcHkyZXhlICAjIHR5cGU6IGlnbm9yZQoKICAgICAgICBjbGFzcyBj
+bWRfcHkyZXhlKF9weTJleGUpOgogICAgICAgICAgICBkZWYgcnVuKHNlbGYp
+IC0+IE5vbmU6CiAgICAgICAgICAgICAgICByb290ID0gZ2V0X3Jvb3QoKQog
+ICAgICAgICAgICAgICAgY2ZnID0gZ2V0X2NvbmZpZ19mcm9tX3Jvb3Qocm9v
+dCkKICAgICAgICAgICAgICAgIHZlcnNpb25zID0gZ2V0X3ZlcnNpb25zKCkK
+ICAgICAgICAgICAgICAgIHRhcmdldF92ZXJzaW9uZmlsZSA9IGNmZy52ZXJz
+aW9uZmlsZV9zb3VyY2UKICAgICAgICAgICAgICAgIHByaW50KCJVUERBVElO
+RyAlcyIgJSB0YXJnZXRfdmVyc2lvbmZpbGUpCiAgICAgICAgICAgICAgICB3
+cml0ZV90b192ZXJzaW9uX2ZpbGUodGFyZ2V0X3ZlcnNpb25maWxlLCB2ZXJz
+aW9ucykKCiAgICAgICAgICAgICAgICBfcHkyZXhlLnJ1bihzZWxmKQogICAg
+ICAgICAgICAgICAgb3MudW5saW5rKHRhcmdldF92ZXJzaW9uZmlsZSkKICAg
+ICAgICAgICAgICAgIHdpdGggb3BlbihjZmcudmVyc2lvbmZpbGVfc291cmNl
+LCAidyIpIGFzIGY6CiAgICAgICAgICAgICAgICAgICAgTE9ORyA9IExPTkdf
+VkVSU0lPTl9QWVtjZmcuVkNTXQogICAgICAgICAgICAgICAgICAgIGYud3Jp
+dGUoTE9ORyAlCiAgICAgICAgICAgICAgICAgICAgICAgICAgICB7IkRPTExB
+UiI6ICIkIiwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAiU1RZTEUi
+OiBjZmcuc3R5bGUsCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIlRB
+R19QUkVGSVgiOiBjZmcudGFnX3ByZWZpeCwKICAgICAgICAgICAgICAgICAg
+ICAgICAgICAgICAiUEFSRU5URElSX1BSRUZJWCI6IGNmZy5wYXJlbnRkaXJf
+cHJlZml4LAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICJWRVJTSU9O
+RklMRV9TT1VSQ0UiOiBjZmcudmVyc2lvbmZpbGVfc291cmNlLAogICAgICAg
+ICAgICAgICAgICAgICAgICAgICAgIH0pCiAgICAgICAgY21kc1sicHkyZXhl
+Il0gPSBjbWRfcHkyZXhlCgogICAgIyBzZGlzdCBmYXJtcyBpdHMgZmlsZSBs
+aXN0IGJ1aWxkaW5nIG91dCB0byBlZ2dfaW5mbwogICAgaWYgJ2VnZ19pbmZv
+JyBpbiBjbWRzOgogICAgICAgIF9lZ2dfaW5mbzogQW55ID0gY21kc1snZWdn
+X2luZm8nXQogICAgZWxzZToKICAgICAgICBmcm9tIHNldHVwdG9vbHMuY29t
+bWFuZC5lZ2dfaW5mbyBpbXBvcnQgZWdnX2luZm8gYXMgX2VnZ19pbmZvCgog
+ICAgY2xhc3MgY21kX2VnZ19pbmZvKF9lZ2dfaW5mbyk6CiAgICAgICAgZGVm
+IGZpbmRfc291cmNlcyhzZWxmKSAtPiBOb25lOgogICAgICAgICAgICAjIGVn
+Z19pbmZvLmZpbmRfc291cmNlcyBidWlsZHMgdGhlIG1hbmlmZXN0IGxpc3Qg
+YW5kIHdyaXRlcyBpdAogICAgICAgICAgICAjIGluIG9uZSBzaG90CiAgICAg
+ICAgICAgIHN1cGVyKCkuZmluZF9zb3VyY2VzKCkKCiAgICAgICAgICAgICMg
+TW9kaWZ5IHRoZSBmaWxlbGlzdCBhbmQgbm9ybWFsaXplIGl0CiAgICAgICAg
+ICAgIHJvb3QgPSBnZXRfcm9vdCgpCiAgICAgICAgICAgIGNmZyA9IGdldF9j
+b25maWdfZnJvbV9yb290KHJvb3QpCiAgICAgICAgICAgIHNlbGYuZmlsZWxp
+c3QuYXBwZW5kKCd2ZXJzaW9uZWVyLnB5JykKICAgICAgICAgICAgaWYgY2Zn
+LnZlcnNpb25maWxlX3NvdXJjZToKICAgICAgICAgICAgICAgICMgVGhlcmUg
+YXJlIHJhcmUgY2FzZXMgd2hlcmUgdmVyc2lvbmZpbGVfc291cmNlIG1pZ2h0
+IG5vdCBiZQogICAgICAgICAgICAgICAgIyBpbmNsdWRlZCBieSBkZWZhdWx0
+LCBzbyB3ZSBtdXN0IGJlIGV4cGxpY2l0CiAgICAgICAgICAgICAgICBzZWxm
+LmZpbGVsaXN0LmFwcGVuZChjZmcudmVyc2lvbmZpbGVfc291cmNlKQogICAg
+ICAgICAgICBzZWxmLmZpbGVsaXN0LnNvcnQoKQogICAgICAgICAgICBzZWxm
+LmZpbGVsaXN0LnJlbW92ZV9kdXBsaWNhdGVzKCkKCiAgICAgICAgICAgICMg
+VGhlIHdyaXRlIG1ldGhvZCBpcyBoaWRkZW4gaW4gdGhlIG1hbmlmZXN0X21h
+a2VyIGluc3RhbmNlIHRoYXQKICAgICAgICAgICAgIyBnZW5lcmF0ZWQgdGhl
+IGZpbGVsaXN0IGFuZCB3YXMgdGhyb3duIGF3YXkKICAgICAgICAgICAgIyBX
+ZSB3aWxsIGluc3RlYWQgcmVwbGljYXRlIHRoZWlyIGZpbmFsIG5vcm1hbGl6
+YXRpb24gKHRvIHVuaWNvZGUsCiAgICAgICAgICAgICMgYW5kIFBPU0lYLXN0
+eWxlIHBhdGhzKQogICAgICAgICAgICBmcm9tIHNldHVwdG9vbHMgaW1wb3J0
+IHVuaWNvZGVfdXRpbHMKICAgICAgICAgICAgbm9ybWFsaXplZCA9IFt1bmlj
+b2RlX3V0aWxzLmZpbGVzeXNfZGVjb2RlKGYpLnJlcGxhY2Uob3Muc2VwLCAn
+LycpCiAgICAgICAgICAgICAgICAgICAgICAgICAgZm9yIGYgaW4gc2VsZi5m
+aWxlbGlzdC5maWxlc10KCiAgICAgICAgICAgIG1hbmlmZXN0X2ZpbGVuYW1l
+ID0gb3MucGF0aC5qb2luKHNlbGYuZWdnX2luZm8sICdTT1VSQ0VTLnR4dCcp
+CiAgICAgICAgICAgIHdpdGggb3BlbihtYW5pZmVzdF9maWxlbmFtZSwgJ3cn
+KSBhcyBmb2JqOgogICAgICAgICAgICAgICAgZm9iai53cml0ZSgnXG4nLmpv
+aW4obm9ybWFsaXplZCkpCgogICAgY21kc1snZWdnX2luZm8nXSA9IGNtZF9l
+Z2dfaW5mbwoKICAgICMgd2Ugb3ZlcnJpZGUgZGlmZmVyZW50ICJzZGlzdCIg
+Y29tbWFuZHMgZm9yIGJvdGggZW52aXJvbm1lbnRzCiAgICBpZiAnc2Rpc3Qn
+IGluIGNtZHM6CiAgICAgICAgX3NkaXN0OiBBbnkgPSBjbWRzWydzZGlzdCdd
+CiAgICBlbHNlOgogICAgICAgIGZyb20gc2V0dXB0b29scy5jb21tYW5kLnNk
+aXN0IGltcG9ydCBzZGlzdCBhcyBfc2Rpc3QKCiAgICBjbGFzcyBjbWRfc2Rp
+c3QoX3NkaXN0KToKICAgICAgICBkZWYgcnVuKHNlbGYpIC0+IE5vbmU6CiAg
+ICAgICAgICAgIHZlcnNpb25zID0gZ2V0X3ZlcnNpb25zKCkKICAgICAgICAg
+ICAgc2VsZi5fdmVyc2lvbmVlcl9nZW5lcmF0ZWRfdmVyc2lvbnMgPSB2ZXJz
+aW9ucwogICAgICAgICAgICAjIHVubGVzcyB3ZSB1cGRhdGUgdGhpcywgdGhl
+IGNvbW1hbmQgd2lsbCBrZWVwIHVzaW5nIHRoZSBvbGQKICAgICAgICAgICAg
+IyB2ZXJzaW9uCiAgICAgICAgICAgIHNlbGYuZGlzdHJpYnV0aW9uLm1ldGFk
+YXRhLnZlcnNpb24gPSB2ZXJzaW9uc1sidmVyc2lvbiJdCiAgICAgICAgICAg
+IHJldHVybiBfc2Rpc3QucnVuKHNlbGYpCgogICAgICAgIGRlZiBtYWtlX3Jl
+bGVhc2VfdHJlZShzZWxmLCBiYXNlX2Rpcjogc3RyLCBmaWxlczogTGlzdFtz
+dHJdKSAtPiBOb25lOgogICAgICAgICAgICByb290ID0gZ2V0X3Jvb3QoKQog
+ICAgICAgICAgICBjZmcgPSBnZXRfY29uZmlnX2Zyb21fcm9vdChyb290KQog
+ICAgICAgICAgICBfc2Rpc3QubWFrZV9yZWxlYXNlX3RyZWUoc2VsZiwgYmFz
+ZV9kaXIsIGZpbGVzKQogICAgICAgICAgICAjIG5vdyBsb2NhdGUgX3ZlcnNp
+b24ucHkgaW4gdGhlIG5ldyBiYXNlX2RpciBkaXJlY3RvcnkKICAgICAgICAg
+ICAgIyAocmVtZW1iZXJpbmcgdGhhdCBpdCBtYXkgYmUgYSBoYXJkbGluaykg
+YW5kIHJlcGxhY2UgaXQgd2l0aCBhbgogICAgICAgICAgICAjIHVwZGF0ZWQg
+dmFsdWUKICAgICAgICAgICAgdGFyZ2V0X3ZlcnNpb25maWxlID0gb3MucGF0
+aC5qb2luKGJhc2VfZGlyLCBjZmcudmVyc2lvbmZpbGVfc291cmNlKQogICAg
+ICAgICAgICBwcmludCgiVVBEQVRJTkcgJXMiICUgdGFyZ2V0X3ZlcnNpb25m
+aWxlKQogICAgICAgICAgICB3cml0ZV90b192ZXJzaW9uX2ZpbGUodGFyZ2V0
+X3ZlcnNpb25maWxlLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgc2VsZi5fdmVyc2lvbmVlcl9nZW5lcmF0ZWRfdmVyc2lvbnMpCiAgICBj
+bWRzWyJzZGlzdCJdID0gY21kX3NkaXN0CgogICAgcmV0dXJuIGNtZHMKCgpD
+T05GSUdfRVJST1IgPSAiIiIKc2V0dXAuY2ZnIGlzIG1pc3NpbmcgdGhlIG5l
+Y2Vzc2FyeSBWZXJzaW9uZWVyIGNvbmZpZ3VyYXRpb24uIFlvdSBuZWVkCmEg
+c2VjdGlvbiBsaWtlOgoKIFt2ZXJzaW9uZWVyXQogVkNTID0gZ2l0CiBzdHls
+ZSA9IHBlcDQ0MAogdmVyc2lvbmZpbGVfc291cmNlID0gc3JjL215cHJvamVj
+dC9fdmVyc2lvbi5weQogdmVyc2lvbmZpbGVfYnVpbGQgPSBteXByb2plY3Qv
+X3ZlcnNpb24ucHkKIHRhZ19wcmVmaXggPQogcGFyZW50ZGlyX3ByZWZpeCA9
+IG15cHJvamVjdC0KCllvdSB3aWxsIGFsc28gbmVlZCB0byBlZGl0IHlvdXIg
+c2V0dXAucHkgdG8gdXNlIHRoZSByZXN1bHRzOgoKIGltcG9ydCB2ZXJzaW9u
+ZWVyCiBzZXR1cCh2ZXJzaW9uPXZlcnNpb25lZXIuZ2V0X3ZlcnNpb24oKSwK
+ICAgICAgIGNtZGNsYXNzPXZlcnNpb25lZXIuZ2V0X2NtZGNsYXNzKCksIC4u
+LikKClBsZWFzZSByZWFkIHRoZSBkb2NzdHJpbmcgaW4gLi92ZXJzaW9uZWVy
+LnB5IGZvciBjb25maWd1cmF0aW9uIGluc3RydWN0aW9ucywKZWRpdCBzZXR1
+cC5jZmcsIGFuZCByZS1ydW4gdGhlIGluc3RhbGxlciBvciAncHl0aG9uIHZl
+cnNpb25lZXIucHkgc2V0dXAnLgoiIiIKClNBTVBMRV9DT05GSUcgPSAiIiIK
+IyBTZWUgdGhlIGRvY3N0cmluZyBpbiB2ZXJzaW9uZWVyLnB5IGZvciBpbnN0
+cnVjdGlvbnMuIE5vdGUgdGhhdCB5b3UgbXVzdAojIHJlLXJ1biAndmVyc2lv
+bmVlci5weSBzZXR1cCcgYWZ0ZXIgY2hhbmdpbmcgdGhpcyBzZWN0aW9uLCBh
+bmQgY29tbWl0IHRoZQojIHJlc3VsdGluZyBmaWxlcy4KClt2ZXJzaW9uZWVy
+XQojVkNTID0gZ2l0CiNzdHlsZSA9IHBlcDQ0MAojdmVyc2lvbmZpbGVfc291
+cmNlID0KI3ZlcnNpb25maWxlX2J1aWxkID0KI3RhZ19wcmVmaXggPQojcGFy
+ZW50ZGlyX3ByZWZpeCA9CgoiIiIKCk9MRF9TTklQUEVUID0gIiIiCmZyb20g
+Ll92ZXJzaW9uIGltcG9ydCBnZXRfdmVyc2lvbnMKX192ZXJzaW9uX18gPSBn
+ZXRfdmVyc2lvbnMoKVsndmVyc2lvbiddCmRlbCBnZXRfdmVyc2lvbnMKIiIi
+CgpJTklUX1BZX1NOSVBQRVQgPSAiIiIKZnJvbSAuIGltcG9ydCB7MH0KX192
+ZXJzaW9uX18gPSB7MH0uZ2V0X3ZlcnNpb25zKClbJ3ZlcnNpb24nXQoiIiIK
+CgpkZWYgZG9fc2V0dXAoKSAtPiBpbnQ6CiAgICAiIiJEbyBtYWluIFZDUy1p
+bmRlcGVuZGVudCBzZXR1cCBmdW5jdGlvbiBmb3IgaW5zdGFsbGluZyBWZXJz
+aW9uZWVyLiIiIgogICAgcm9vdCA9IGdldF9yb290KCkKICAgIHRyeToKICAg
+ICAgICBjZmcgPSBnZXRfY29uZmlnX2Zyb21fcm9vdChyb290KQogICAgZXhj
+ZXB0IChPU0Vycm9yLCBjb25maWdwYXJzZXIuTm9TZWN0aW9uRXJyb3IsCiAg
+ICAgICAgICAgIGNvbmZpZ3BhcnNlci5Ob09wdGlvbkVycm9yKSBhcyBlOgog
+ICAgICAgIGlmIGlzaW5zdGFuY2UoZSwgKE9TRXJyb3IsIGNvbmZpZ3BhcnNl
+ci5Ob1NlY3Rpb25FcnJvcikpOgogICAgICAgICAgICBwcmludCgiQWRkaW5n
+IHNhbXBsZSB2ZXJzaW9uZWVyIGNvbmZpZyB0byBzZXR1cC5jZmciLAogICAg
+ICAgICAgICAgICAgICBmaWxlPXN5cy5zdGRlcnIpCiAgICAgICAgICAgIHdp
+dGggb3Blbihvcy5wYXRoLmpvaW4ocm9vdCwgInNldHVwLmNmZyIpLCAiYSIp
+IGFzIGY6CiAgICAgICAgICAgICAgICBmLndyaXRlKFNBTVBMRV9DT05GSUcp
+CiAgICAgICAgcHJpbnQoQ09ORklHX0VSUk9SLCBmaWxlPXN5cy5zdGRlcnIp
+CiAgICAgICAgcmV0dXJuIDEKCiAgICBwcmludCgiIGNyZWF0aW5nICVzIiAl
+IGNmZy52ZXJzaW9uZmlsZV9zb3VyY2UpCiAgICB3aXRoIG9wZW4oY2ZnLnZl
+cnNpb25maWxlX3NvdXJjZSwgInciKSBhcyBmOgogICAgICAgIExPTkcgPSBM
+T05HX1ZFUlNJT05fUFlbY2ZnLlZDU10KICAgICAgICBmLndyaXRlKExPTkcg
+JSB7IkRPTExBUiI6ICIkIiwKICAgICAgICAgICAgICAgICAgICAgICAgIlNU
+WUxFIjogY2ZnLnN0eWxlLAogICAgICAgICAgICAgICAgICAgICAgICAiVEFH
+X1BSRUZJWCI6IGNmZy50YWdfcHJlZml4LAogICAgICAgICAgICAgICAgICAg
+ICAgICAiUEFSRU5URElSX1BSRUZJWCI6IGNmZy5wYXJlbnRkaXJfcHJlZml4
+LAogICAgICAgICAgICAgICAgICAgICAgICAiVkVSU0lPTkZJTEVfU09VUkNF
+IjogY2ZnLnZlcnNpb25maWxlX3NvdXJjZSwKICAgICAgICAgICAgICAgICAg
+ICAgICAgfSkKCiAgICBpcHkgPSBvcy5wYXRoLmpvaW4ob3MucGF0aC5kaXJu
+YW1lKGNmZy52ZXJzaW9uZmlsZV9zb3VyY2UpLAogICAgICAgICAgICAgICAg
+ICAgICAgICJfX2luaXRfXy5weSIpCiAgICBtYXliZV9pcHk6IE9wdGlvbmFs
+W3N0cl0gPSBpcHkKICAgIGlmIG9zLnBhdGguZXhpc3RzKGlweSk6CiAgICAg
+ICAgdHJ5OgogICAgICAgICAgICB3aXRoIG9wZW4oaXB5LCAiciIpIGFzIGY6
+CiAgICAgICAgICAgICAgICBvbGQgPSBmLnJlYWQoKQogICAgICAgIGV4Y2Vw
+dCBPU0Vycm9yOgogICAgICAgICAgICBvbGQgPSAiIgogICAgICAgIG1vZHVs
+ZSA9IG9zLnBhdGguc3BsaXRleHQob3MucGF0aC5iYXNlbmFtZShjZmcudmVy
+c2lvbmZpbGVfc291cmNlKSlbMF0KICAgICAgICBzbmlwcGV0ID0gSU5JVF9Q
+WV9TTklQUEVULmZvcm1hdChtb2R1bGUpCiAgICAgICAgaWYgT0xEX1NOSVBQ
+RVQgaW4gb2xkOgogICAgICAgICAgICBwcmludCgiIHJlcGxhY2luZyBib2ls
+ZXJwbGF0ZSBpbiAlcyIgJSBpcHkpCiAgICAgICAgICAgIHdpdGggb3Blbihp
+cHksICJ3IikgYXMgZjoKICAgICAgICAgICAgICAgIGYud3JpdGUob2xkLnJl
+cGxhY2UoT0xEX1NOSVBQRVQsIHNuaXBwZXQpKQogICAgICAgIGVsaWYgc25p
+cHBldCBub3QgaW4gb2xkOgogICAgICAgICAgICBwcmludCgiIGFwcGVuZGlu
+ZyB0byAlcyIgJSBpcHkpCiAgICAgICAgICAgIHdpdGggb3BlbihpcHksICJh
+IikgYXMgZjoKICAgICAgICAgICAgICAgIGYud3JpdGUoc25pcHBldCkKICAg
+ICAgICBlbHNlOgogICAgICAgICAgICBwcmludCgiICVzIHVubW9kaWZpZWQi
+ICUgaXB5KQogICAgZWxzZToKICAgICAgICBwcmludCgiICVzIGRvZXNuJ3Qg
+ZXhpc3QsIG9rIiAlIGlweSkKICAgICAgICBtYXliZV9pcHkgPSBOb25lCgog
+ICAgIyBNYWtlIFZDUy1zcGVjaWZpYyBjaGFuZ2VzLiBGb3IgZ2l0LCB0aGlz
+IG1lYW5zIGNyZWF0aW5nL2NoYW5naW5nCiAgICAjIC5naXRhdHRyaWJ1dGVz
+IHRvIG1hcmsgX3ZlcnNpb24ucHkgZm9yIGV4cG9ydC1zdWJzdCBrZXl3b3Jk
+CiAgICAjIHN1YnN0aXR1dGlvbi4KICAgIGRvX3Zjc19pbnN0YWxsKGNmZy52
+ZXJzaW9uZmlsZV9zb3VyY2UsIG1heWJlX2lweSkKICAgIHJldHVybiAwCgoK
+ZGVmIHNjYW5fc2V0dXBfcHkoKSAtPiBpbnQ6CiAgICAiIiJWYWxpZGF0ZSB0
+aGUgY29udGVudHMgb2Ygc2V0dXAucHkgYWdhaW5zdCBWZXJzaW9uZWVyJ3Mg
+ZXhwZWN0YXRpb25zLiIiIgogICAgZm91bmQgPSBzZXQoKQogICAgc2V0dGVy
+cyA9IEZhbHNlCiAgICBlcnJvcnMgPSAwCiAgICB3aXRoIG9wZW4oInNldHVw
+LnB5IiwgInIiKSBhcyBmOgogICAgICAgIGZvciBsaW5lIGluIGYucmVhZGxp
+bmVzKCk6CiAgICAgICAgICAgIGlmICJpbXBvcnQgdmVyc2lvbmVlciIgaW4g
+bGluZToKICAgICAgICAgICAgICAgIGZvdW5kLmFkZCgiaW1wb3J0IikKICAg
+ICAgICAgICAgaWYgInZlcnNpb25lZXIuZ2V0X2NtZGNsYXNzKCkiIGluIGxp
+bmU6CiAgICAgICAgICAgICAgICBmb3VuZC5hZGQoImNtZGNsYXNzIikKICAg
+ICAgICAgICAgaWYgInZlcnNpb25lZXIuZ2V0X3ZlcnNpb24oKSIgaW4gbGlu
+ZToKICAgICAgICAgICAgICAgIGZvdW5kLmFkZCgiZ2V0X3ZlcnNpb24iKQog
+ICAgICAgICAgICBpZiAidmVyc2lvbmVlci5WQ1MiIGluIGxpbmU6CiAgICAg
+ICAgICAgICAgICBzZXR0ZXJzID0gVHJ1ZQogICAgICAgICAgICBpZiAidmVy
+c2lvbmVlci52ZXJzaW9uZmlsZV9zb3VyY2UiIGluIGxpbmU6CiAgICAgICAg
+ICAgICAgICBzZXR0ZXJzID0gVHJ1ZQogICAgaWYgbGVuKGZvdW5kKSAhPSAz
+OgogICAgICAgIHByaW50KCIiKQogICAgICAgIHByaW50KCJZb3VyIHNldHVw
+LnB5IGFwcGVhcnMgdG8gYmUgbWlzc2luZyBzb21lIGltcG9ydGFudCBpdGVt
+cyIpCiAgICAgICAgcHJpbnQoIihidXQgSSBtaWdodCBiZSB3cm9uZykuIFBs
+ZWFzZSBtYWtlIHN1cmUgaXQgaGFzIHNvbWV0aGluZyIpCiAgICAgICAgcHJp
+bnQoInJvdWdobHkgbGlrZSB0aGUgZm9sbG93aW5nOiIpCiAgICAgICAgcHJp
+bnQoIiIpCiAgICAgICAgcHJpbnQoIiBpbXBvcnQgdmVyc2lvbmVlciIpCiAg
+ICAgICAgcHJpbnQoIiBzZXR1cCggdmVyc2lvbj12ZXJzaW9uZWVyLmdldF92
+ZXJzaW9uKCksIikKICAgICAgICBwcmludCgiICAgICAgICBjbWRjbGFzcz12
+ZXJzaW9uZWVyLmdldF9jbWRjbGFzcygpLCAgLi4uKSIpCiAgICAgICAgcHJp
+bnQoIiIpCiAgICAgICAgZXJyb3JzICs9IDEKICAgIGlmIHNldHRlcnM6CiAg
+ICAgICAgcHJpbnQoIllvdSBzaG91bGQgcmVtb3ZlIGxpbmVzIGxpa2UgJ3Zl
+cnNpb25lZXIuVkNTID0gJyBhbmQiKQogICAgICAgIHByaW50KCIndmVyc2lv
+bmVlci52ZXJzaW9uZmlsZV9zb3VyY2UgPSAnIC4gVGhpcyBjb25maWd1cmF0
+aW9uIikKICAgICAgICBwcmludCgibm93IGxpdmVzIGluIHNldHVwLmNmZywg
+YW5kIHNob3VsZCBiZSByZW1vdmVkIGZyb20gc2V0dXAucHkiKQogICAgICAg
+IHByaW50KCIiKQogICAgICAgIGVycm9ycyArPSAxCiAgICByZXR1cm4gZXJy
+b3JzCgoKZGVmIHNldHVwX2NvbW1hbmQoKSAtPiBOb1JldHVybjoKICAgICIi
+IlNldCB1cCBWZXJzaW9uZWVyIGFuZCBleGl0IHdpdGggYXBwcm9wcmlhdGUg
+ZXJyb3IgY29kZS4iIiIKICAgIGVycm9ycyA9IGRvX3NldHVwKCkKICAgIGVy
+cm9ycyArPSBzY2FuX3NldHVwX3B5KCkKICAgIHN5cy5leGl0KDEgaWYgZXJy
+b3JzIGVsc2UgMCkKCgppZiBfX25hbWVfXyA9PSAiX19tYWluX18iOgogICAg
+Y21kID0gc3lzLmFyZ3ZbMV0KICAgIGlmIGNtZCA9PSAic2V0dXAiOgogICAg
+ICAgIHNldHVwX2NvbW1hbmQoKQo=
 
 """
+newver = "0.29+27.gbdf701a"
 
-from __future__ import print_function
-try:
-    import configparser
-except ImportError:
-    import ConfigParser as configparser
-import errno
-import json
-import os
-import re
-import subprocess
-import sys
+VERSIONEER_PEP518 = True
+
+VERSIONEER = base64.b64decode(VERSIONEER_b64.encode('ASCII'))
 
 
-class VersioneerConfig:
-    """Container for Versioneer configuration parameters."""
+# Stub overwritten by exec()
+def setup_command() -> NoReturn: ...  # type: ignore
+
+# Make versioneer usable via import
+exec(VERSIONEER.decode(), globals())
 
 
-def get_root():
-    """Get the project root directory.
+def detect_installed_version() -> str:
+    """Find version string in vendored versioneer
 
-    We require that all commands are run from the project root, i.e. the
-    directory that contains setup.py, setup.cfg, and versioneer.py .
+    Raises FileNotFoundError if missing.
     """
-    root = os.path.realpath(os.path.abspath(os.getcwd()))
-    setup_py = os.path.join(root, "setup.py")
-    versioneer_py = os.path.join(root, "versioneer.py")
-    if not (os.path.exists(setup_py) or os.path.exists(versioneer_py)):
-        # allow 'python path/to/setup.py COMMAND'
-        root = os.path.dirname(os.path.realpath(os.path.abspath(sys.argv[0])))
-        setup_py = os.path.join(root, "setup.py")
-        versioneer_py = os.path.join(root, "versioneer.py")
-    if not (os.path.exists(setup_py) or os.path.exists(versioneer_py)):
-        err = ("Versioneer was unable to run the project root directory. "
-               "Versioneer requires setup.py to be executed from "
-               "its immediate directory (like 'python setup.py COMMAND'), "
-               "or in a way that lets it use sys.argv[0] to find the root "
-               "(like 'python path/to/setup.py COMMAND').")
-        raise VersioneerBadRootError(err)
+    with open("versioneer.py") as fobj:
+        for i, line in enumerate(fobj):
+            if line.startswith("# Version: "):
+                return line[len("# Version: "):].strip()
+            if i > 5:
+                break
+    return "unknown version"
+
+
+def vendor() -> None:
+    """Install versioneer into current directory"""
     try:
-        # Certain runtime workflows (setup.py install/develop in a setuptools
-        # tree) execute all dependencies in a single python process, so
-        # "versioneer" may be imported multiple times, and python's shared
-        # module-import table will cache the first one. So we can't use
-        # os.path.dirname(__file__), as that will find whichever
-        # versioneer.py was first imported, even in later projects.
-        me = os.path.realpath(os.path.abspath(__file__))
-        me_dir = os.path.normcase(os.path.splitext(me)[0])
-        vsr_dir = os.path.normcase(os.path.splitext(versioneer_py)[0])
-        if me_dir != vsr_dir:
-            print("Warning: build in %s is using versioneer.py from %s"
-                  % (os.path.dirname(me), versioneer_py))
-    except NameError:
+        oldver = detect_installed_version()
+    except FileNotFoundError:
         pass
-    return root
-
-
-def get_config_from_root(root):
-    """Read the project setup.cfg file to determine Versioneer config."""
-    # This might raise EnvironmentError (if setup.cfg is missing), or
-    # configparser.NoSectionError (if it lacks a [versioneer] section), or
-    # configparser.NoOptionError (if it lacks "VCS="). See the docstring at
-    # the top of versioneer.py for instructions on writing your setup.cfg .
-    setup_cfg = os.path.join(root, "setup.cfg")
-    parser = configparser.SafeConfigParser()
-    with open(setup_cfg, "r") as f:
-        parser.readfp(f)
-    VCS = parser.get("versioneer", "VCS")  # mandatory
-
-    def get(parser, name):
-        if parser.has_option("versioneer", name):
-            return parser.get("versioneer", name)
-        return None
-    cfg = VersioneerConfig()
-    cfg.VCS = VCS
-    cfg.style = get(parser, "style") or ""
-    cfg.versionfile_source = get(parser, "versionfile_source")
-    cfg.versionfile_build = get(parser, "versionfile_build")
-    cfg.tag_prefix = get(parser, "tag_prefix")
-    if cfg.tag_prefix in ("''", '""'):
-        cfg.tag_prefix = ""
-    cfg.parentdir_prefix = get(parser, "parentdir_prefix")
-    cfg.verbose = get(parser, "verbose")
-    return cfg
-
-
-class NotThisMethod(Exception):
-    """Exception raised if a method is not valid for the current scenario."""
-
-
-# these dictionaries contain VCS-specific tools
-LONG_VERSION_PY = {}
-HANDLERS = {}
-
-
-def register_vcs_handler(vcs, method):  # decorator
-    """Decorator to mark a method as the handler for a particular VCS."""
-    def decorate(f):
-        """Store f in HANDLERS[vcs][method]."""
-        if vcs not in HANDLERS:
-            HANDLERS[vcs] = {}
-        HANDLERS[vcs][method] = f
-        return f
-    return decorate
-
-
-def run_command(commands, args, cwd=None, verbose=False, hide_stderr=False,
-                env=None):
-    """Call the given command(s)."""
-    assert isinstance(commands, list)
-    p = None
-    for c in commands:
-        try:
-            dispcmd = str([c] + args)
-            # remember shell=False, so use git.cmd on windows, not just git
-            p = subprocess.Popen([c] + args, cwd=cwd, env=env,
-                                 stdout=subprocess.PIPE,
-                                 stderr=(subprocess.PIPE if hide_stderr
-                                         else None))
-            break
-        except EnvironmentError:
-            e = sys.exc_info()[1]
-            if e.errno == errno.ENOENT:
-                continue
-            if verbose:
-                print("unable to run %s" % dispcmd)
-                print(e)
-            return None, None
     else:
-        if verbose:
-            print("unable to find command, tried %s" % (commands,))
-        return None, None
-    stdout = p.communicate()[0].strip()
-    if sys.version_info[0] >= 3:
-        stdout = stdout.decode()
-    if p.returncode != 0:
-        if verbose:
-            print("unable to run %s (error)" % dispcmd)
-            print("stdout was %s" % stdout)
-        return None, p.returncode
-    return stdout, p.returncode
+        print(f"replacing old versioneer.py ({oldver})")
 
+    with open("versioneer.py", "wb") as fobj:
+        fobj.write(VERSIONEER)
+    print(f"versioneer.py ({newver}) installed into local tree")
 
-LONG_VERSION_PY['git'] = '''
-# This file helps to compute a version number in source trees obtained from
-# git-archive tarball (such as those provided by githubs download-from-tag
-# feature). Distribution tarballs (built by setup.py sdist) and build
-# directories (produced by setup.py build) will contain a much shorter file
-# that just contains the computed version number.
 
-# This file is released into the public domain. Generated by
-# versioneer-0.18 (https://github.com/warner/python-versioneer)
+def main() -> NoReturn:
+    usage = "Usage: versioneer install [--vendor|--no-vendor]"
+    if len(sys.argv) < 2 or len(sys.argv) > 3:
+        print(usage)
+        sys.exit(1)
 
-"""Git implementation of _version.py."""
+    command = sys.argv[1]
+    mode = "--vendor" if len(sys.argv) == 2 else sys.argv[2]
 
-import errno
-import os
-import re
-import subprocess
-import sys
+    if command in ("version", "--version"):
+        print("versioneer (installer) %s" % newver)
+        sys.exit(0)
+    elif command in ("help", "-help", "--help"):
+        print(usage)
+        sys.exit(0)
+    elif command != "install" or mode not in ("--vendor", "--no-vendor"):
+        print(usage)
+        sys.exit(1)
 
+    if mode == "--vendor":
+        vendor()
+        print("Now running 'versioneer.py setup' to install the generated files..")
 
-def get_keywords():
-    """Get the keywords needed to look up the version information."""
-    # these strings will be replaced by git during git-archive.
-    # setup.py/versioneer.py will grep for the variable names, so they must
-    # each be defined on a line of their own. _version.py will just call
-    # get_keywords().
-    git_refnames = "%(DOLLAR)sFormat:%%d%(DOLLAR)s"
-    git_full = "%(DOLLAR)sFormat:%%H%(DOLLAR)s"
-    git_date = "%(DOLLAR)sFormat:%%ci%(DOLLAR)s"
-    keywords = {"refnames": git_refnames, "full": git_full, "date": git_date}
-    return keywords
+    setup_command()
 
 
-class VersioneerConfig:
-    """Container for Versioneer configuration parameters."""
-
-
-def get_config():
-    """Create, populate and return the VersioneerConfig() object."""
-    # these strings are filled in when 'setup.py versioneer' creates
-    # _version.py
-    cfg = VersioneerConfig()
-    cfg.VCS = "git"
-    cfg.style = "%(STYLE)s"
-    cfg.tag_prefix = "%(TAG_PREFIX)s"
-    cfg.parentdir_prefix = "%(PARENTDIR_PREFIX)s"
-    cfg.versionfile_source = "%(VERSIONFILE_SOURCE)s"
-    cfg.verbose = False
-    return cfg
-
-
-class NotThisMethod(Exception):
-    """Exception raised if a method is not valid for the current scenario."""
-
-
-LONG_VERSION_PY = {}
-HANDLERS = {}
-
-
-def register_vcs_handler(vcs, method):  # decorator
-    """Decorator to mark a method as the handler for a particular VCS."""
-    def decorate(f):
-        """Store f in HANDLERS[vcs][method]."""
-        if vcs not in HANDLERS:
-            HANDLERS[vcs] = {}
-        HANDLERS[vcs][method] = f
-        return f
-    return decorate
-
-
-def run_command(commands, args, cwd=None, verbose=False, hide_stderr=False,
-                env=None):
-    """Call the given command(s)."""
-    assert isinstance(commands, list)
-    p = None
-    for c in commands:
-        try:
-            dispcmd = str([c] + args)
-            # remember shell=False, so use git.cmd on windows, not just git
-            p = subprocess.Popen([c] + args, cwd=cwd, env=env,
-                                 stdout=subprocess.PIPE,
-                                 stderr=(subprocess.PIPE if hide_stderr
-                                         else None))
-            break
-        except EnvironmentError:
-            e = sys.exc_info()[1]
-            if e.errno == errno.ENOENT:
-                continue
-            if verbose:
-                print("unable to run %%s" %% dispcmd)
-                print(e)
-            return None, None
-    else:
-        if verbose:
-            print("unable to find command, tried %%s" %% (commands,))
-        return None, None
-    stdout = p.communicate()[0].strip()
-    if sys.version_info[0] >= 3:
-        stdout = stdout.decode()
-    if p.returncode != 0:
-        if verbose:
-            print("unable to run %%s (error)" %% dispcmd)
-            print("stdout was %%s" %% stdout)
-        return None, p.returncode
-    return stdout, p.returncode
-
-
-def versions_from_parentdir(parentdir_prefix, root, verbose):
-    """Try to determine the version from the parent directory name.
-
-    Source tarballs conventionally unpack into a directory that includes both
-    the project name and a version string. We will also support searching up
-    two directory levels for an appropriately named parent directory
-    """
-    rootdirs = []
-
-    for i in range(3):
-        dirname = os.path.basename(root)
-        if dirname.startswith(parentdir_prefix):
-            return {"version": dirname[len(parentdir_prefix):],
-                    "full-revisionid": None,
-                    "dirty": False, "error": None, "date": None}
-        else:
-            rootdirs.append(root)
-            root = os.path.dirname(root)  # up a level
-
-    if verbose:
-        print("Tried directories %%s but none started with prefix %%s" %%
-              (str(rootdirs), parentdir_prefix))
-    raise NotThisMethod("rootdir doesn't start with parentdir_prefix")
-
-
-@register_vcs_handler("git", "get_keywords")
-def git_get_keywords(versionfile_abs):
-    """Extract version information from the given file."""
-    # the code embedded in _version.py can just fetch the value of these
-    # keywords. When used from setup.py, we don't want to import _version.py,
-    # so we do it with a regexp instead. This function is not used from
-    # _version.py.
-    keywords = {}
-    try:
-        f = open(versionfile_abs, "r")
-        for line in f.readlines():
-            if line.strip().startswith("git_refnames ="):
-                mo = re.search(r'=\s*"(.*)"', line)
-                if mo:
-                    keywords["refnames"] = mo.group(1)
-            if line.strip().startswith("git_full ="):
-                mo = re.search(r'=\s*"(.*)"', line)
-                if mo:
-                    keywords["full"] = mo.group(1)
-            if line.strip().startswith("git_date ="):
-                mo = re.search(r'=\s*"(.*)"', line)
-                if mo:
-                    keywords["date"] = mo.group(1)
-        f.close()
-    except EnvironmentError:
-        pass
-    return keywords
-
-
-@register_vcs_handler("git", "keywords")
-def git_versions_from_keywords(keywords, tag_prefix, verbose):
-    """Get version information from git keywords."""
-    if not keywords:
-        raise NotThisMethod("no keywords at all, weird")
-    date = keywords.get("date")
-    if date is not None:
-        # git-2.2.0 added "%%cI", which expands to an ISO-8601 -compliant
-        # datestamp. However we prefer "%%ci" (which expands to an "ISO-8601
-        # -like" string, which we must then edit to make compliant), because
-        # it's been around since git-1.5.3, and it's too difficult to
-        # discover which version we're using, or to work around using an
-        # older one.
-        date = date.strip().replace(" ", "T", 1).replace(" ", "", 1)
-    refnames = keywords["refnames"].strip()
-    if refnames.startswith("$Format"):
-        if verbose:
-            print("keywords are unexpanded, not using")
-        raise NotThisMethod("unexpanded keywords, not a git-archive tarball")
-    refs = set([r.strip() for r in refnames.strip("()").split(",")])
-    # starting in git-1.8.3, tags are listed as "tag: foo-1.0" instead of
-    # just "foo-1.0". If we see a "tag: " prefix, prefer those.
-    TAG = "tag: "
-    tags = set([r[len(TAG):] for r in refs if r.startswith(TAG)])
-    if not tags:
-        # Either we're using git < 1.8.3, or there really are no tags. We use
-        # a heuristic: assume all version tags have a digit. The old git %%d
-        # expansion behaves like git log --decorate=short and strips out the
-        # refs/heads/ and refs/tags/ prefixes that would let us distinguish
-        # between branches and tags. By ignoring refnames without digits, we
-        # filter out many common branch names like "release" and
-        # "stabilization", as well as "HEAD" and "master".
-        tags = set([r for r in refs if re.search(r'\d', r)])
-        if verbose:
-            print("discarding '%%s', no digits" %% ",".join(refs - tags))
-    if verbose:
-        print("likely tags: %%s" %% ",".join(sorted(tags)))
-    for ref in sorted(tags):
-        # sorting will prefer e.g. "2.0" over "2.0rc1"
-        if ref.startswith(tag_prefix):
-            r = ref[len(tag_prefix):]
-            if verbose:
-                print("picking %%s" %% r)
-            return {"version": r,
-                    "full-revisionid": keywords["full"].strip(),
-                    "dirty": False, "error": None,
-                    "date": date}
-    # no suitable tags, so version is "0+unknown", but full hex is still there
-    if verbose:
-        print("no suitable tags, using unknown + full revision id")
-    return {"version": "0+unknown",
-            "full-revisionid": keywords["full"].strip(),
-            "dirty": False, "error": "no suitable tags", "date": None}
-
-
-@register_vcs_handler("git", "pieces_from_vcs")
-def git_pieces_from_vcs(tag_prefix, root, verbose, run_command=run_command):
-    """Get version from 'git describe' in the root of the source tree.
-
-    This only gets called if the git-archive 'subst' keywords were *not*
-    expanded, and _version.py hasn't already been rewritten with a short
-    version string, meaning we're inside a checked out source tree.
-    """
-    GITS = ["git"]
-    if sys.platform == "win32":
-        GITS = ["git.cmd", "git.exe"]
-
-    out, rc = run_command(GITS, ["rev-parse", "--git-dir"], cwd=root,
-                          hide_stderr=True)
-    if rc != 0:
-        if verbose:
-            print("Directory %%s not under git control" %% root)
-        raise NotThisMethod("'git rev-parse --git-dir' returned error")
-
-    # if there is a tag matching tag_prefix, this yields TAG-NUM-gHEX[-dirty]
-    # if there isn't one, this yields HEX[-dirty] (no NUM)
-    describe_out, rc = run_command(GITS, ["describe", "--tags", "--dirty",
-                                          "--always", "--long",
-                                          "--match", "%%s*" %% tag_prefix],
-                                   cwd=root)
-    # --long was added in git-1.5.5
-    if describe_out is None:
-        raise NotThisMethod("'git describe' failed")
-    describe_out = describe_out.strip()
-    full_out, rc = run_command(GITS, ["rev-parse", "HEAD"], cwd=root)
-    if full_out is None:
-        raise NotThisMethod("'git rev-parse' failed")
-    full_out = full_out.strip()
-
-    pieces = {}
-    pieces["long"] = full_out
-    pieces["short"] = full_out[:7]  # maybe improved later
-    pieces["error"] = None
-
-    # parse describe_out. It will be like TAG-NUM-gHEX[-dirty] or HEX[-dirty]
-    # TAG might have hyphens.
-    git_describe = describe_out
-
-    # look for -dirty suffix
-    dirty = git_describe.endswith("-dirty")
-    pieces["dirty"] = dirty
-    if dirty:
-        git_describe = git_describe[:git_describe.rindex("-dirty")]
-
-    # now we have TAG-NUM-gHEX or HEX
-
-    if "-" in git_describe:
-        # TAG-NUM-gHEX
-        mo = re.search(r'^(.+)-(\d+)-g([0-9a-f]+)$', git_describe)
-        if not mo:
-            # unparseable. Maybe git-describe is misbehaving?
-            pieces["error"] = ("unable to parse git-describe output: '%%s'"
-                               %% describe_out)
-            return pieces
-
-        # tag
-        full_tag = mo.group(1)
-        if not full_tag.startswith(tag_prefix):
-            if verbose:
-                fmt = "tag '%%s' doesn't start with prefix '%%s'"
-                print(fmt %% (full_tag, tag_prefix))
-            pieces["error"] = ("tag '%%s' doesn't start with prefix '%%s'"
-                               %% (full_tag, tag_prefix))
-            return pieces
-        pieces["closest-tag"] = full_tag[len(tag_prefix):]
-
-        # distance: number of commits since tag
-        pieces["distance"] = int(mo.group(2))
-
-        # commit: short hex revision ID
-        pieces["short"] = mo.group(3)
-
-    else:
-        # HEX: no tags
-        pieces["closest-tag"] = None
-        count_out, rc = run_command(GITS, ["rev-list", "HEAD", "--count"],
-                                    cwd=root)
-        pieces["distance"] = int(count_out)  # total number of commits
-
-    # commit date: see ISO-8601 comment in git_versions_from_keywords()
-    date = run_command(GITS, ["show", "-s", "--format=%%ci", "HEAD"],
-                       cwd=root)[0].strip()
-    pieces["date"] = date.strip().replace(" ", "T", 1).replace(" ", "", 1)
-
-    return pieces
-
-
-def plus_or_dot(pieces):
-    """Return a + if we don't already have one, else return a ."""
-    if "+" in pieces.get("closest-tag", ""):
-        return "."
-    return "+"
-
-
-def render_pep440(pieces):
-    """Build up version string, with post-release "local version identifier".
-
-    Our goal: TAG[+DISTANCE.gHEX[.dirty]] . Note that if you
-    get a tagged build and then dirty it, you'll get TAG+0.gHEX.dirty
-
-    Exceptions:
-    1: no tags. git_describe was just HEX. 0+untagged.DISTANCE.gHEX[.dirty]
-    """
-    if pieces["closest-tag"]:
-        rendered = pieces["closest-tag"]
-        if pieces["distance"] or pieces["dirty"]:
-            rendered += plus_or_dot(pieces)
-            rendered += "%%d.g%%s" %% (pieces["distance"], pieces["short"])
-            if pieces["dirty"]:
-                rendered += ".dirty"
-    else:
-        # exception #1
-        rendered = "0+untagged.%%d.g%%s" %% (pieces["distance"],
-                                          pieces["short"])
-        if pieces["dirty"]:
-            rendered += ".dirty"
-    return rendered
-
-
-def render_pep440_pre(pieces):
-    """TAG[.post.devDISTANCE] -- No -dirty.
-
-    Exceptions:
-    1: no tags. 0.post.devDISTANCE
-    """
-    if pieces["closest-tag"]:
-        rendered = pieces["closest-tag"]
-        if pieces["distance"]:
-            rendered += ".post.dev%%d" %% pieces["distance"]
-    else:
-        # exception #1
-        rendered = "0.post.dev%%d" %% pieces["distance"]
-    return rendered
-
-
-def render_pep440_post(pieces):
-    """TAG[.postDISTANCE[.dev0]+gHEX] .
-
-    The ".dev0" means dirty. Note that .dev0 sorts backwards
-    (a dirty tree will appear "older" than the corresponding clean one),
-    but you shouldn't be releasing software with -dirty anyways.
-
-    Exceptions:
-    1: no tags. 0.postDISTANCE[.dev0]
-    """
-    if pieces["closest-tag"]:
-        rendered = pieces["closest-tag"]
-        if pieces["distance"] or pieces["dirty"]:
-            rendered += ".post%%d" %% pieces["distance"]
-            if pieces["dirty"]:
-                rendered += ".dev0"
-            rendered += plus_or_dot(pieces)
-            rendered += "g%%s" %% pieces["short"]
-    else:
-        # exception #1
-        rendered = "0.post%%d" %% pieces["distance"]
-        if pieces["dirty"]:
-            rendered += ".dev0"
-        rendered += "+g%%s" %% pieces["short"]
-    return rendered
-
-
-def render_pep440_old(pieces):
-    """TAG[.postDISTANCE[.dev0]] .
-
-    The ".dev0" means dirty.
-
-    Eexceptions:
-    1: no tags. 0.postDISTANCE[.dev0]
-    """
-    if pieces["closest-tag"]:
-        rendered = pieces["closest-tag"]
-        if pieces["distance"] or pieces["dirty"]:
-            rendered += ".post%%d" %% pieces["distance"]
-            if pieces["dirty"]:
-                rendered += ".dev0"
-    else:
-        # exception #1
-        rendered = "0.post%%d" %% pieces["distance"]
-        if pieces["dirty"]:
-            rendered += ".dev0"
-    return rendered
-
-
-def render_git_describe(pieces):
-    """TAG[-DISTANCE-gHEX][-dirty].
-
-    Like 'git describe --tags --dirty --always'.
-
-    Exceptions:
-    1: no tags. HEX[-dirty]  (note: no 'g' prefix)
-    """
-    if pieces["closest-tag"]:
-        rendered = pieces["closest-tag"]
-        if pieces["distance"]:
-            rendered += "-%%d-g%%s" %% (pieces["distance"], pieces["short"])
-    else:
-        # exception #1
-        rendered = pieces["short"]
-    if pieces["dirty"]:
-        rendered += "-dirty"
-    return rendered
-
-
-def render_git_describe_long(pieces):
-    """TAG-DISTANCE-gHEX[-dirty].
-
-    Like 'git describe --tags --dirty --always -long'.
-    The distance/hash is unconditional.
-
-    Exceptions:
-    1: no tags. HEX[-dirty]  (note: no 'g' prefix)
-    """
-    if pieces["closest-tag"]:
-        rendered = pieces["closest-tag"]
-        rendered += "-%%d-g%%s" %% (pieces["distance"], pieces["short"])
-    else:
-        # exception #1
-        rendered = pieces["short"]
-    if pieces["dirty"]:
-        rendered += "-dirty"
-    return rendered
-
-
-def render(pieces, style):
-    """Render the given version pieces into the requested style."""
-    if pieces["error"]:
-        return {"version": "unknown",
-                "full-revisionid": pieces.get("long"),
-                "dirty": None,
-                "error": pieces["error"],
-                "date": None}
-
-    if not style or style == "default":
-        style = "pep440"  # the default
-
-    if style == "pep440":
-        rendered = render_pep440(pieces)
-    elif style == "pep440-pre":
-        rendered = render_pep440_pre(pieces)
-    elif style == "pep440-post":
-        rendered = render_pep440_post(pieces)
-    elif style == "pep440-old":
-        rendered = render_pep440_old(pieces)
-    elif style == "git-describe":
-        rendered = render_git_describe(pieces)
-    elif style == "git-describe-long":
-        rendered = render_git_describe_long(pieces)
-    else:
-        raise ValueError("unknown style '%%s'" %% style)
-
-    return {"version": rendered, "full-revisionid": pieces["long"],
-            "dirty": pieces["dirty"], "error": None,
-            "date": pieces.get("date")}
-
-
-def get_versions():
-    """Get version information or return default if unable to do so."""
-    # I am in _version.py, which lives at ROOT/VERSIONFILE_SOURCE. If we have
-    # __file__, we can work backwards from there to the root. Some
-    # py2exe/bbfreeze/non-CPython implementations don't do __file__, in which
-    # case we can only use expanded keywords.
-
-    cfg = get_config()
-    verbose = cfg.verbose
-
-    try:
-        return git_versions_from_keywords(get_keywords(), cfg.tag_prefix,
-                                          verbose)
-    except NotThisMethod:
-        pass
-
-    try:
-        root = os.path.realpath(__file__)
-        # versionfile_source is the relative path from the top of the source
-        # tree (where the .git directory might live) to this file. Invert
-        # this to find the root from __file__.
-        for i in cfg.versionfile_source.split('/'):
-            root = os.path.dirname(root)
-    except NameError:
-        return {"version": "0+unknown", "full-revisionid": None,
-                "dirty": None,
-                "error": "unable to find root of source tree",
-                "date": None}
-
-    try:
-        pieces = git_pieces_from_vcs(cfg.tag_prefix, root, verbose)
-        return render(pieces, cfg.style)
-    except NotThisMethod:
-        pass
-
-    try:
-        if cfg.parentdir_prefix:
-            return versions_from_parentdir(cfg.parentdir_prefix, root, verbose)
-    except NotThisMethod:
-        pass
-
-    return {"version": "0+unknown", "full-revisionid": None,
-            "dirty": None,
-            "error": "unable to compute version", "date": None}
-'''
-
-
-@register_vcs_handler("git", "get_keywords")
-def git_get_keywords(versionfile_abs):
-    """Extract version information from the given file."""
-    # the code embedded in _version.py can just fetch the value of these
-    # keywords. When used from setup.py, we don't want to import _version.py,
-    # so we do it with a regexp instead. This function is not used from
-    # _version.py.
-    keywords = {}
-    try:
-        f = open(versionfile_abs, "r")
-        for line in f.readlines():
-            if line.strip().startswith("git_refnames ="):
-                mo = re.search(r'=\s*"(.*)"', line)
-                if mo:
-                    keywords["refnames"] = mo.group(1)
-            if line.strip().startswith("git_full ="):
-                mo = re.search(r'=\s*"(.*)"', line)
-                if mo:
-                    keywords["full"] = mo.group(1)
-            if line.strip().startswith("git_date ="):
-                mo = re.search(r'=\s*"(.*)"', line)
-                if mo:
-                    keywords["date"] = mo.group(1)
-        f.close()
-    except EnvironmentError:
-        pass
-    return keywords
-
-
-@register_vcs_handler("git", "keywords")
-def git_versions_from_keywords(keywords, tag_prefix, verbose):
-    """Get version information from git keywords."""
-    if not keywords:
-        raise NotThisMethod("no keywords at all, weird")
-    date = keywords.get("date")
-    if date is not None:
-        # git-2.2.0 added "%cI", which expands to an ISO-8601 -compliant
-        # datestamp. However we prefer "%ci" (which expands to an "ISO-8601
-        # -like" string, which we must then edit to make compliant), because
-        # it's been around since git-1.5.3, and it's too difficult to
-        # discover which version we're using, or to work around using an
-        # older one.
-        date = date.strip().replace(" ", "T", 1).replace(" ", "", 1)
-    refnames = keywords["refnames"].strip()
-    if refnames.startswith("$Format"):
-        if verbose:
-            print("keywords are unexpanded, not using")
-        raise NotThisMethod("unexpanded keywords, not a git-archive tarball")
-    refs = set([r.strip() for r in refnames.strip("()").split(",")])
-    # starting in git-1.8.3, tags are listed as "tag: foo-1.0" instead of
-    # just "foo-1.0". If we see a "tag: " prefix, prefer those.
-    TAG = "tag: "
-    tags = set([r[len(TAG):] for r in refs if r.startswith(TAG)])
-    if not tags:
-        # Either we're using git < 1.8.3, or there really are no tags. We use
-        # a heuristic: assume all version tags have a digit. The old git %d
-        # expansion behaves like git log --decorate=short and strips out the
-        # refs/heads/ and refs/tags/ prefixes that would let us distinguish
-        # between branches and tags. By ignoring refnames without digits, we
-        # filter out many common branch names like "release" and
-        # "stabilization", as well as "HEAD" and "master".
-        tags = set([r for r in refs if re.search(r'\d', r)])
-        if verbose:
-            print("discarding '%s', no digits" % ",".join(refs - tags))
-    if verbose:
-        print("likely tags: %s" % ",".join(sorted(tags)))
-    for ref in sorted(tags):
-        # sorting will prefer e.g. "2.0" over "2.0rc1"
-        if ref.startswith(tag_prefix):
-            r = ref[len(tag_prefix):]
-            if verbose:
-                print("picking %s" % r)
-            return {"version": r,
-                    "full-revisionid": keywords["full"].strip(),
-                    "dirty": False, "error": None,
-                    "date": date}
-    # no suitable tags, so version is "0+unknown", but full hex is still there
-    if verbose:
-        print("no suitable tags, using unknown + full revision id")
-    return {"version": "0+unknown",
-            "full-revisionid": keywords["full"].strip(),
-            "dirty": False, "error": "no suitable tags", "date": None}
-
-
-@register_vcs_handler("git", "pieces_from_vcs")
-def git_pieces_from_vcs(tag_prefix, root, verbose, run_command=run_command):
-    """Get version from 'git describe' in the root of the source tree.
-
-    This only gets called if the git-archive 'subst' keywords were *not*
-    expanded, and _version.py hasn't already been rewritten with a short
-    version string, meaning we're inside a checked out source tree.
-    """
-    GITS = ["git"]
-    if sys.platform == "win32":
-        GITS = ["git.cmd", "git.exe"]
-
-    out, rc = run_command(GITS, ["rev-parse", "--git-dir"], cwd=root,
-                          hide_stderr=True)
-    if rc != 0:
-        if verbose:
-            print("Directory %s not under git control" % root)
-        raise NotThisMethod("'git rev-parse --git-dir' returned error")
-
-    # if there is a tag matching tag_prefix, this yields TAG-NUM-gHEX[-dirty]
-    # if there isn't one, this yields HEX[-dirty] (no NUM)
-    describe_out, rc = run_command(GITS, ["describe", "--tags", "--dirty",
-                                          "--always", "--long",
-                                          "--match", "%s*" % tag_prefix],
-                                   cwd=root)
-    # --long was added in git-1.5.5
-    if describe_out is None:
-        raise NotThisMethod("'git describe' failed")
-    describe_out = describe_out.strip()
-    full_out, rc = run_command(GITS, ["rev-parse", "HEAD"], cwd=root)
-    if full_out is None:
-        raise NotThisMethod("'git rev-parse' failed")
-    full_out = full_out.strip()
-
-    pieces = {}
-    pieces["long"] = full_out
-    pieces["short"] = full_out[:7]  # maybe improved later
-    pieces["error"] = None
-
-    # parse describe_out. It will be like TAG-NUM-gHEX[-dirty] or HEX[-dirty]
-    # TAG might have hyphens.
-    git_describe = describe_out
-
-    # look for -dirty suffix
-    dirty = git_describe.endswith("-dirty")
-    pieces["dirty"] = dirty
-    if dirty:
-        git_describe = git_describe[:git_describe.rindex("-dirty")]
-
-    # now we have TAG-NUM-gHEX or HEX
-
-    if "-" in git_describe:
-        # TAG-NUM-gHEX
-        mo = re.search(r'^(.+)-(\d+)-g([0-9a-f]+)$', git_describe)
-        if not mo:
-            # unparseable. Maybe git-describe is misbehaving?
-            pieces["error"] = ("unable to parse git-describe output: '%s'"
-                               % describe_out)
-            return pieces
-
-        # tag
-        full_tag = mo.group(1)
-        if not full_tag.startswith(tag_prefix):
-            if verbose:
-                fmt = "tag '%s' doesn't start with prefix '%s'"
-                print(fmt % (full_tag, tag_prefix))
-            pieces["error"] = ("tag '%s' doesn't start with prefix '%s'"
-                               % (full_tag, tag_prefix))
-            return pieces
-        pieces["closest-tag"] = full_tag[len(tag_prefix):]
-
-        # distance: number of commits since tag
-        pieces["distance"] = int(mo.group(2))
-
-        # commit: short hex revision ID
-        pieces["short"] = mo.group(3)
-
-    else:
-        # HEX: no tags
-        pieces["closest-tag"] = None
-        count_out, rc = run_command(GITS, ["rev-list", "HEAD", "--count"],
-                                    cwd=root)
-        pieces["distance"] = int(count_out)  # total number of commits
-
-    # commit date: see ISO-8601 comment in git_versions_from_keywords()
-    date = run_command(GITS, ["show", "-s", "--format=%ci", "HEAD"],
-                       cwd=root)[0].strip()
-    pieces["date"] = date.strip().replace(" ", "T", 1).replace(" ", "", 1)
-
-    return pieces
-
-
-def do_vcs_install(manifest_in, versionfile_source, ipy):
-    """Git-specific installation logic for Versioneer.
-
-    For Git, this means creating/changing .gitattributes to mark _version.py
-    for export-subst keyword substitution.
-    """
-    GITS = ["git"]
-    if sys.platform == "win32":
-        GITS = ["git.cmd", "git.exe"]
-    files = [manifest_in, versionfile_source]
-    if ipy:
-        files.append(ipy)
-    try:
-        me = __file__
-        if me.endswith(".pyc") or me.endswith(".pyo"):
-            me = os.path.splitext(me)[0] + ".py"
-        versioneer_file = os.path.relpath(me)
-    except NameError:
-        versioneer_file = "versioneer.py"
-    files.append(versioneer_file)
-    present = False
-    try:
-        f = open(".gitattributes", "r")
-        for line in f.readlines():
-            if line.strip().startswith(versionfile_source):
-                if "export-subst" in line.strip().split()[1:]:
-                    present = True
-        f.close()
-    except EnvironmentError:
-        pass
-    if not present:
-        f = open(".gitattributes", "a+")
-        f.write("%s export-subst\n" % versionfile_source)
-        f.close()
-        files.append(".gitattributes")
-    run_command(GITS, ["add", "--"] + files)
-
-
-def versions_from_parentdir(parentdir_prefix, root, verbose):
-    """Try to determine the version from the parent directory name.
-
-    Source tarballs conventionally unpack into a directory that includes both
-    the project name and a version string. We will also support searching up
-    two directory levels for an appropriately named parent directory
-    """
-    rootdirs = []
-
-    for i in range(3):
-        dirname = os.path.basename(root)
-        if dirname.startswith(parentdir_prefix):
-            return {"version": dirname[len(parentdir_prefix):],
-                    "full-revisionid": None,
-                    "dirty": False, "error": None, "date": None}
-        else:
-            rootdirs.append(root)
-            root = os.path.dirname(root)  # up a level
-
-    if verbose:
-        print("Tried directories %s but none started with prefix %s" %
-              (str(rootdirs), parentdir_prefix))
-    raise NotThisMethod("rootdir doesn't start with parentdir_prefix")
-
-
-SHORT_VERSION_PY = """
-# This file was generated by 'versioneer.py' (0.18) from
-# revision-control system data, or from the parent directory name of an
-# unpacked source archive. Distribution tarballs contain a pre-generated copy
-# of this file.
-
-import json
-
-version_json = '''
-%s
-'''  # END VERSION_JSON
-
-
-def get_versions():
-    return json.loads(version_json)
-"""
-
-
-def versions_from_file(filename):
-    """Try to determine the version from _version.py if present."""
-    try:
-        with open(filename) as f:
-            contents = f.read()
-    except EnvironmentError:
-        raise NotThisMethod("unable to read _version.py")
-    mo = re.search(r"version_json = '''\n(.*)'''  # END VERSION_JSON",
-                   contents, re.M | re.S)
-    if not mo:
-        mo = re.search(r"version_json = '''\r\n(.*)'''  # END VERSION_JSON",
-                       contents, re.M | re.S)
-    if not mo:
-        raise NotThisMethod("no version_json in _version.py")
-    return json.loads(mo.group(1))
-
-
-def write_to_version_file(filename, versions):
-    """Write the given version number to the given _version.py file."""
-    os.unlink(filename)
-    contents = json.dumps(versions, sort_keys=True,
-                          indent=1, separators=(",", ": "))
-    with open(filename, "w") as f:
-        f.write(SHORT_VERSION_PY % contents)
-
-    print("set %s to '%s'" % (filename, versions["version"]))
-
-
-def plus_or_dot(pieces):
-    """Return a + if we don't already have one, else return a ."""
-    if "+" in pieces.get("closest-tag", ""):
-        return "."
-    return "+"
-
-
-def render_pep440(pieces):
-    """Build up version string, with post-release "local version identifier".
-
-    Our goal: TAG[+DISTANCE.gHEX[.dirty]] . Note that if you
-    get a tagged build and then dirty it, you'll get TAG+0.gHEX.dirty
-
-    Exceptions:
-    1: no tags. git_describe was just HEX. 0+untagged.DISTANCE.gHEX[.dirty]
-    """
-    if pieces["closest-tag"]:
-        rendered = pieces["closest-tag"]
-        if pieces["distance"] or pieces["dirty"]:
-            rendered += plus_or_dot(pieces)
-            rendered += "%d.g%s" % (pieces["distance"], pieces["short"])
-            if pieces["dirty"]:
-                rendered += ".dirty"
-    else:
-        # exception #1
-        rendered = "0+untagged.%d.g%s" % (pieces["distance"],
-                                          pieces["short"])
-        if pieces["dirty"]:
-            rendered += ".dirty"
-    return rendered
-
-
-def render_pep440_pre(pieces):
-    """TAG[.post.devDISTANCE] -- No -dirty.
-
-    Exceptions:
-    1: no tags. 0.post.devDISTANCE
-    """
-    if pieces["closest-tag"]:
-        rendered = pieces["closest-tag"]
-        if pieces["distance"]:
-            rendered += ".post.dev%d" % pieces["distance"]
-    else:
-        # exception #1
-        rendered = "0.post.dev%d" % pieces["distance"]
-    return rendered
-
-
-def render_pep440_post(pieces):
-    """TAG[.postDISTANCE[.dev0]+gHEX] .
-
-    The ".dev0" means dirty. Note that .dev0 sorts backwards
-    (a dirty tree will appear "older" than the corresponding clean one),
-    but you shouldn't be releasing software with -dirty anyways.
-
-    Exceptions:
-    1: no tags. 0.postDISTANCE[.dev0]
-    """
-    if pieces["closest-tag"]:
-        rendered = pieces["closest-tag"]
-        if pieces["distance"] or pieces["dirty"]:
-            rendered += ".post%d" % pieces["distance"]
-            if pieces["dirty"]:
-                rendered += ".dev0"
-            rendered += plus_or_dot(pieces)
-            rendered += "g%s" % pieces["short"]
-    else:
-        # exception #1
-        rendered = "0.post%d" % pieces["distance"]
-        if pieces["dirty"]:
-            rendered += ".dev0"
-        rendered += "+g%s" % pieces["short"]
-    return rendered
-
-
-def render_pep440_old(pieces):
-    """TAG[.postDISTANCE[.dev0]] .
-
-    The ".dev0" means dirty.
-
-    Eexceptions:
-    1: no tags. 0.postDISTANCE[.dev0]
-    """
-    if pieces["closest-tag"]:
-        rendered = pieces["closest-tag"]
-        if pieces["distance"] or pieces["dirty"]:
-            rendered += ".post%d" % pieces["distance"]
-            if pieces["dirty"]:
-                rendered += ".dev0"
-    else:
-        # exception #1
-        rendered = "0.post%d" % pieces["distance"]
-        if pieces["dirty"]:
-            rendered += ".dev0"
-    return rendered
-
-
-def render_git_describe(pieces):
-    """TAG[-DISTANCE-gHEX][-dirty].
-
-    Like 'git describe --tags --dirty --always'.
-
-    Exceptions:
-    1: no tags. HEX[-dirty]  (note: no 'g' prefix)
-    """
-    if pieces["closest-tag"]:
-        rendered = pieces["closest-tag"]
-        if pieces["distance"]:
-            rendered += "-%d-g%s" % (pieces["distance"], pieces["short"])
-    else:
-        # exception #1
-        rendered = pieces["short"]
-    if pieces["dirty"]:
-        rendered += "-dirty"
-    return rendered
-
-
-def render_git_describe_long(pieces):
-    """TAG-DISTANCE-gHEX[-dirty].
-
-    Like 'git describe --tags --dirty --always -long'.
-    The distance/hash is unconditional.
-
-    Exceptions:
-    1: no tags. HEX[-dirty]  (note: no 'g' prefix)
-    """
-    if pieces["closest-tag"]:
-        rendered = pieces["closest-tag"]
-        rendered += "-%d-g%s" % (pieces["distance"], pieces["short"])
-    else:
-        # exception #1
-        rendered = pieces["short"]
-    if pieces["dirty"]:
-        rendered += "-dirty"
-    return rendered
-
-
-def render(pieces, style):
-    """Render the given version pieces into the requested style."""
-    if pieces["error"]:
-        return {"version": "unknown",
-                "full-revisionid": pieces.get("long"),
-                "dirty": None,
-                "error": pieces["error"],
-                "date": None}
-
-    if not style or style == "default":
-        style = "pep440"  # the default
-
-    if style == "pep440":
-        rendered = render_pep440(pieces)
-    elif style == "pep440-pre":
-        rendered = render_pep440_pre(pieces)
-    elif style == "pep440-post":
-        rendered = render_pep440_post(pieces)
-    elif style == "pep440-old":
-        rendered = render_pep440_old(pieces)
-    elif style == "git-describe":
-        rendered = render_git_describe(pieces)
-    elif style == "git-describe-long":
-        rendered = render_git_describe_long(pieces)
-    else:
-        raise ValueError("unknown style '%s'" % style)
-
-    return {"version": rendered, "full-revisionid": pieces["long"],
-            "dirty": pieces["dirty"], "error": None,
-            "date": pieces.get("date")}
-
-
-class VersioneerBadRootError(Exception):
-    """The project root directory is unknown or missing key files."""
-
-
-def get_versions(verbose=False):
-    """Get the project version from whatever source is available.
-
-    Returns dict with two keys: 'version' and 'full'.
-    """
-    if "versioneer" in sys.modules:
-        # see the discussion in cmdclass.py:get_cmdclass()
-        del sys.modules["versioneer"]
-
-    root = get_root()
-    cfg = get_config_from_root(root)
-
-    assert cfg.VCS is not None, "please set [versioneer]VCS= in setup.cfg"
-    handlers = HANDLERS.get(cfg.VCS)
-    assert handlers, "unrecognized VCS '%s'" % cfg.VCS
-    verbose = verbose or cfg.verbose
-    assert cfg.versionfile_source is not None, \
-        "please set versioneer.versionfile_source"
-    assert cfg.tag_prefix is not None, "please set versioneer.tag_prefix"
-
-    versionfile_abs = os.path.join(root, cfg.versionfile_source)
-
-    # extract version from first of: _version.py, VCS command (e.g. 'git
-    # describe'), parentdir. This is meant to work for developers using a
-    # source checkout, for users of a tarball created by 'setup.py sdist',
-    # and for users of a tarball/zipball created by 'git archive' or github's
-    # download-from-tag feature or the equivalent in other VCSes.
-
-    get_keywords_f = handlers.get("get_keywords")
-    from_keywords_f = handlers.get("keywords")
-    if get_keywords_f and from_keywords_f:
-        try:
-            keywords = get_keywords_f(versionfile_abs)
-            ver = from_keywords_f(keywords, cfg.tag_prefix, verbose)
-            if verbose:
-                print("got version from expanded keyword %s" % ver)
-            return ver
-        except NotThisMethod:
-            pass
-
-    try:
-        ver = versions_from_file(versionfile_abs)
-        if verbose:
-            print("got version from file %s %s" % (versionfile_abs, ver))
-        return ver
-    except NotThisMethod:
-        pass
-
-    from_vcs_f = handlers.get("pieces_from_vcs")
-    if from_vcs_f:
-        try:
-            pieces = from_vcs_f(cfg.tag_prefix, root, verbose)
-            ver = render(pieces, cfg.style)
-            if verbose:
-                print("got version from VCS %s" % ver)
-            return ver
-        except NotThisMethod:
-            pass
-
-    try:
-        if cfg.parentdir_prefix:
-            ver = versions_from_parentdir(cfg.parentdir_prefix, root, verbose)
-            if verbose:
-                print("got version from parentdir %s" % ver)
-            return ver
-    except NotThisMethod:
-        pass
-
-    if verbose:
-        print("unable to compute version")
-
-    return {"version": "0+unknown", "full-revisionid": None,
-            "dirty": None, "error": "unable to compute version",
-            "date": None}
-
-
-def get_version():
-    """Get the short version string for this project."""
-    return get_versions()["version"]
-
-
-def get_cmdclass():
-    """Get the custom setuptools/distutils subclasses used by Versioneer."""
-    if "versioneer" in sys.modules:
-        del sys.modules["versioneer"]
-        # this fixes the "python setup.py develop" case (also 'install' and
-        # 'easy_install .'), in which subdependencies of the main project are
-        # built (using setup.py bdist_egg) in the same python process. Assume
-        # a main project A and a dependency B, which use different versions
-        # of Versioneer. A's setup.py imports A's Versioneer, leaving it in
-        # sys.modules by the time B's setup.py is executed, causing B to run
-        # with the wrong versioneer. Setuptools wraps the sub-dep builds in a
-        # sandbox that restores sys.modules to it's pre-build state, so the
-        # parent is protected against the child's "import versioneer". By
-        # removing ourselves from sys.modules here, before the child build
-        # happens, we protect the child from the parent's versioneer too.
-        # Also see https://github.com/warner/python-versioneer/issues/52
-
-    cmds = {}
-
-    # we add "version" to both distutils and setuptools
-    from distutils.core import Command
-
-    class cmd_version(Command):
-        description = "report generated version string"
-        user_options = []
-        boolean_options = []
-
-        def initialize_options(self):
-            pass
-
-        def finalize_options(self):
-            pass
-
-        def run(self):
-            vers = get_versions(verbose=True)
-            print("Version: %s" % vers["version"])
-            print(" full-revisionid: %s" % vers.get("full-revisionid"))
-            print(" dirty: %s" % vers.get("dirty"))
-            print(" date: %s" % vers.get("date"))
-            if vers["error"]:
-                print(" error: %s" % vers["error"])
-    cmds["version"] = cmd_version
-
-    # we override "build_py" in both distutils and setuptools
-    #
-    # most invocation pathways end up running build_py:
-    #  distutils/build -> build_py
-    #  distutils/install -> distutils/build ->..
-    #  setuptools/bdist_wheel -> distutils/install ->..
-    #  setuptools/bdist_egg -> distutils/install_lib -> build_py
-    #  setuptools/install -> bdist_egg ->..
-    #  setuptools/develop -> ?
-    #  pip install:
-    #   copies source tree to a tempdir before running egg_info/etc
-    #   if .git isn't copied too, 'git describe' will fail
-    #   then does setup.py bdist_wheel, or sometimes setup.py install
-    #  setup.py egg_info -> ?
-
-    # we override different "build_py" commands for both environments
-    if "setuptools" in sys.modules:
-        from setuptools.command.build_py import build_py as _build_py
-    else:
-        from distutils.command.build_py import build_py as _build_py
-
-    class cmd_build_py(_build_py):
-        def run(self):
-            root = get_root()
-            cfg = get_config_from_root(root)
-            versions = get_versions()
-            _build_py.run(self)
-            # now locate _version.py in the new build/ directory and replace
-            # it with an updated value
-            if cfg.versionfile_build:
-                target_versionfile = os.path.join(self.build_lib,
-                                                  cfg.versionfile_build)
-                print("UPDATING %s" % target_versionfile)
-                write_to_version_file(target_versionfile, versions)
-    cmds["build_py"] = cmd_build_py
-
-    if "setuptools" in sys.modules:
-        from setuptools.command.build_ext import build_ext as _build_ext
-    else:
-        from distutils.command.build_ext import build_ext as _build_ext
-
-    class cmd_build_ext(_build_ext):
-        def run(self):
-            root = get_root()
-            cfg = get_config_from_root(root)
-            versions = get_versions()
-            _build_ext.run(self)
-            if self.inplace:
-                # build_ext --inplace will only build modules in
-                # build/lib<..> dir with no _version.py to write to.
-                # As in place builds will already have a _version.py
-                # in the module dir, we do not need to write one.
-                return
-            # now locate _version.py in the new build/ directory and replace
-            # it with an updated value
-            target_versionfile = os.path.join(self.build_lib,
-                                              cfg.versionfile_source)
-            print("UPDATING %s" % target_versionfile)
-            write_to_version_file(target_versionfile, versions)
-    cmds["build_ext"] = cmd_build_ext
-
-    if "cx_Freeze" in sys.modules:  # cx_freeze enabled?
-        from cx_Freeze.dist import build_exe as _build_exe
-        # nczeczulin reports that py2exe won't like the pep440-style string
-        # as FILEVERSION, but it can be used for PRODUCTVERSION, e.g.
-        # setup(console=[{
-        #   "version": versioneer.get_version().split("+", 1)[0], # FILEVERSION
-        #   "product_version": versioneer.get_version(),
-        #   ...
-
-        class cmd_build_exe(_build_exe):
-            def run(self):
-                root = get_root()
-                cfg = get_config_from_root(root)
-                versions = get_versions()
-                target_versionfile = cfg.versionfile_source
-                print("UPDATING %s" % target_versionfile)
-                write_to_version_file(target_versionfile, versions)
-
-                _build_exe.run(self)
-                os.unlink(target_versionfile)
-                with open(cfg.versionfile_source, "w") as f:
-                    LONG = LONG_VERSION_PY[cfg.VCS]
-                    f.write(LONG %
-                            {"DOLLAR": "$",
-                             "STYLE": cfg.style,
-                             "TAG_PREFIX": cfg.tag_prefix,
-                             "PARENTDIR_PREFIX": cfg.parentdir_prefix,
-                             "VERSIONFILE_SOURCE": cfg.versionfile_source,
-                             })
-        cmds["build_exe"] = cmd_build_exe
-        del cmds["build_py"]
-
-    if 'py2exe' in sys.modules:  # py2exe enabled?
-        try:
-            from py2exe.distutils_buildexe import py2exe as _py2exe  # py3
-        except ImportError:
-            from py2exe.build_exe import py2exe as _py2exe  # py2
-
-        class cmd_py2exe(_py2exe):
-            def run(self):
-                root = get_root()
-                cfg = get_config_from_root(root)
-                versions = get_versions()
-                target_versionfile = cfg.versionfile_source
-                print("UPDATING %s" % target_versionfile)
-                write_to_version_file(target_versionfile, versions)
-
-                _py2exe.run(self)
-                os.unlink(target_versionfile)
-                with open(cfg.versionfile_source, "w") as f:
-                    LONG = LONG_VERSION_PY[cfg.VCS]
-                    f.write(LONG %
-                            {"DOLLAR": "$",
-                             "STYLE": cfg.style,
-                             "TAG_PREFIX": cfg.tag_prefix,
-                             "PARENTDIR_PREFIX": cfg.parentdir_prefix,
-                             "VERSIONFILE_SOURCE": cfg.versionfile_source,
-                             })
-        cmds["py2exe"] = cmd_py2exe
-
-    # we override different "sdist" commands for both environments
-    if "setuptools" in sys.modules:
-        from setuptools.command.sdist import sdist as _sdist
-    else:
-        from distutils.command.sdist import sdist as _sdist
-
-    class cmd_sdist(_sdist):
-        def run(self):
-            versions = get_versions()
-            self._versioneer_generated_versions = versions
-            # unless we update this, the command will keep using the old
-            # version
-            self.distribution.metadata.version = versions["version"]
-            return _sdist.run(self)
-
-        def make_release_tree(self, base_dir, files):
-            root = get_root()
-            cfg = get_config_from_root(root)
-            _sdist.make_release_tree(self, base_dir, files)
-            # now locate _version.py in the new base_dir directory
-            # (remembering that it may be a hardlink) and replace it with an
-            # updated value
-            target_versionfile = os.path.join(base_dir, cfg.versionfile_source)
-            print("UPDATING %s" % target_versionfile)
-            write_to_version_file(target_versionfile,
-                                  self._versioneer_generated_versions)
-    cmds["sdist"] = cmd_sdist
-
-    return cmds
-
-
-CONFIG_ERROR = """
-setup.cfg is missing the necessary Versioneer configuration. You need
-a section like:
-
- [versioneer]
- VCS = git
- style = pep440
- versionfile_source = src/myproject/_version.py
- versionfile_build = myproject/_version.py
- tag_prefix =
- parentdir_prefix = myproject-
-
-You will also need to edit your setup.py to use the results:
-
- import versioneer
- setup(version=versioneer.get_version(),
-       cmdclass=versioneer.get_cmdclass(), ...)
-
-Please read the docstring in ./versioneer.py for configuration instructions,
-edit setup.cfg, and re-run the installer or 'python versioneer.py setup'.
-"""
-
-SAMPLE_CONFIG = """
-# See the docstring in versioneer.py for instructions. Note that you must
-# re-run 'versioneer.py setup' after changing this section, and commit the
-# resulting files.
-
-[versioneer]
-#VCS = git
-#style = pep440
-#versionfile_source =
-#versionfile_build =
-#tag_prefix =
-#parentdir_prefix =
-
-"""
-
-INIT_PY_SNIPPET = """
-from ._version import get_versions
-__version__ = get_versions()['version']
-del get_versions
-"""
-
-
-def do_setup():
-    """Main VCS-independent setup function for installing Versioneer."""
-    root = get_root()
-    try:
-        cfg = get_config_from_root(root)
-    except (EnvironmentError, configparser.NoSectionError,
-            configparser.NoOptionError) as e:
-        if isinstance(e, (EnvironmentError, configparser.NoSectionError)):
-            print("Adding sample versioneer config to setup.cfg",
-                  file=sys.stderr)
-            with open(os.path.join(root, "setup.cfg"), "a") as f:
-                f.write(SAMPLE_CONFIG)
-        print(CONFIG_ERROR, file=sys.stderr)
-        return 1
-
-    print(" creating %s" % cfg.versionfile_source)
-    with open(cfg.versionfile_source, "w") as f:
-        LONG = LONG_VERSION_PY[cfg.VCS]
-        f.write(LONG % {"DOLLAR": "$",
-                        "STYLE": cfg.style,
-                        "TAG_PREFIX": cfg.tag_prefix,
-                        "PARENTDIR_PREFIX": cfg.parentdir_prefix,
-                        "VERSIONFILE_SOURCE": cfg.versionfile_source,
-                        })
-
-    ipy = os.path.join(os.path.dirname(cfg.versionfile_source),
-                       "__init__.py")
-    if os.path.exists(ipy):
-        try:
-            with open(ipy, "r") as f:
-                old = f.read()
-        except EnvironmentError:
-            old = ""
-        if INIT_PY_SNIPPET not in old:
-            print(" appending to %s" % ipy)
-            with open(ipy, "a") as f:
-                f.write(INIT_PY_SNIPPET)
-        else:
-            print(" %s unmodified" % ipy)
-    else:
-        print(" %s doesn't exist, ok" % ipy)
-        ipy = None
-
-    # Make sure both the top-level "versioneer.py" and versionfile_source
-    # (PKG/_version.py, used by runtime code) are in MANIFEST.in, so
-    # they'll be copied into source distributions. Pip won't be able to
-    # install the package without this.
-    manifest_in = os.path.join(root, "MANIFEST.in")
-    simple_includes = set()
-    try:
-        with open(manifest_in, "r") as f:
-            for line in f:
-                if line.startswith("include "):
-                    for include in line.split()[1:]:
-                        simple_includes.add(include)
-    except EnvironmentError:
-        pass
-    # That doesn't cover everything MANIFEST.in can do
-    # (http://docs.python.org/2/distutils/sourcedist.html#commands), so
-    # it might give some false negatives. Appending redundant 'include'
-    # lines is safe, though.
-    if "versioneer.py" not in simple_includes:
-        print(" appending 'versioneer.py' to MANIFEST.in")
-        with open(manifest_in, "a") as f:
-            f.write("include versioneer.py\n")
-    else:
-        print(" 'versioneer.py' already in MANIFEST.in")
-    if cfg.versionfile_source not in simple_includes:
-        print(" appending versionfile_source ('%s') to MANIFEST.in" %
-              cfg.versionfile_source)
-        with open(manifest_in, "a") as f:
-            f.write("include %s\n" % cfg.versionfile_source)
-    else:
-        print(" versionfile_source already in MANIFEST.in")
-
-    # Make VCS-specific changes. For git, this means creating/changing
-    # .gitattributes to mark _version.py for export-subst keyword
-    # substitution.
-    do_vcs_install(manifest_in, cfg.versionfile_source, ipy)
-    return 0
-
-
-def scan_setup_py():
-    """Validate the contents of setup.py against Versioneer's expectations."""
-    found = set()
-    setters = False
-    errors = 0
-    with open("setup.py", "r") as f:
-        for line in f.readlines():
-            if "import versioneer" in line:
-                found.add("import")
-            if "versioneer.get_cmdclass()" in line:
-                found.add("cmdclass")
-            if "versioneer.get_version()" in line:
-                found.add("get_version")
-            if "versioneer.VCS" in line:
-                setters = True
-            if "versioneer.versionfile_source" in line:
-                setters = True
-    if len(found) != 3:
-        print("")
-        print("Your setup.py appears to be missing some important items")
-        print("(but I might be wrong). Please make sure it has something")
-        print("roughly like the following:")
-        print("")
-        print(" import versioneer")
-        print(" setup( version=versioneer.get_version(),")
-        print("        cmdclass=versioneer.get_cmdclass(),  ...)")
-        print("")
-        errors += 1
-    if setters:
-        print("You should remove lines like 'versioneer.VCS = ' and")
-        print("'versioneer.versionfile_source = ' . This configuration")
-        print("now lives in setup.cfg, and should be removed from setup.py")
-        print("")
-        errors += 1
-    return errors
-
-
-if __name__ == "__main__":
-    cmd = sys.argv[1]
-    if cmd == "setup":
-        errors = do_setup()
-        errors += scan_setup_py()
-        if errors:
-            sys.exit(1)
+if __name__ == '__main__':
+    main()
